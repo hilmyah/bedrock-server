@@ -1,0 +1,24 @@
+cat << 'EOF' > .gitignore
+# Executable
+bedrock_server
+
+# Arsip dan Backup
+*.zip
+*.bak
+worlds_backup/
+
+# Data Dunia (Sangat dinamis, tidak boleh masuk Git)
+worlds/
+
+# Cache, Log, dan Dokumentasi Bawaan
+premium_cache/
+*.log
+bedrock_server_how_to.html
+release-notes.txt
+Dedicated_Server.txt
+
+# Development Packs
+development_behavior_packs/
+development_resource_packs/
+development_skin_packs/
+EOF
