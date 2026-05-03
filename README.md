@@ -1,4 +1,3 @@
-cat << 'EOF' > README.md
 # Minecraft Bedrock Server Setup
 
 Repositori ini berisi konfigurasi server Minecraft Bedrock. Data dunia (worlds) dan file binary (executable) diabaikan dari version control.
