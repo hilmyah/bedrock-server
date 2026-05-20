@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Minecraft Bedrock Server
+=======
+# Minecraft Bedrock Server Setup
+>>>>>>> ff22776966679916722f9a674610deba58b5cd8e
 
 Repositori ini berisi konfigurasi, skrip manajemen, dan panduan lengkap untuk menjalankan Minecraft Bedrock Server di Debian/Ubuntu menggunakan [Playit.gg](https://playit.gg) sebagai tunnel publik tanpa memerlukan IP publik atau konfigurasi port forwarding.
 
@@ -212,6 +216,14 @@ atau secara eksplisit:
 ```bash
 sudo /opt/bedrock-server/update_bedrock.sh
 ```
+
+### Pemasangan Alias Command (Khusus Instalasi Manual)
+
+Jika Anda tidak menggunakan skrip instalasi otomatis (`install.sh`) dan mengunduh skrip pembaruan secara manual, buat tautan simbolik (symlink) agar perintah dapat dieksekusi secara global:
+
+```bash
+sudo chmod +x /opt/bedrock-server/update_bedrock.sh
+sudo ln -sf /opt/bedrock-server/update_bedrock.sh /usr/local/bin/bedrock-update
 
 ### Opsi Update
 
