@@ -224,6 +224,7 @@ Jika Anda tidak menggunakan skrip instalasi otomatis (`install.sh`) dan mengundu
 ```bash
 sudo chmod +x /opt/bedrock-server/update_bedrock.sh
 sudo ln -sf /opt/bedrock-server/update_bedrock.sh /usr/local/bin/bedrock-update
+```
 
 ### Opsi Update
 
