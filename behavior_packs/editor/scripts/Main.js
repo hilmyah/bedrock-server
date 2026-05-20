@@ -1873,6 +1873,7 @@ var __webpack_exports__ = {};
         ["ButtonVariant"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.ButtonVariant,
         ["ColorPickerPropertyItemVariant"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.ColorPickerPropertyItemVariant,
         ["ComboBoxPropertyItemDataType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.ComboBoxPropertyItemDataType,
+        ["ConeBrushShape"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.ConeBrushShape,
         ["ContinuousActionState"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.ContinuousActionState,
         ["CoreActionBarItemType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.CoreActionBarItemType,
         ["CoreBrushShapeType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.CoreBrushShapeType,
@@ -1914,6 +1915,7 @@ var __webpack_exports__ = {};
         ["PaneLayoutType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.PaneLayoutType,
         ["PlaytestSessionResult"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.PlaytestSessionResult,
         ["ProgressIndicatorPropertyItemVariant"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.ProgressIndicatorPropertyItemVariant,
+        ["PyramidBrushShape"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.PyramidBrushShape,
         ["RelativeVolumeListBlockVolume"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.RelativeVolumeListBlockVolume,
         ["SelectionVolumeEventType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.SelectionVolumeEventType,
         ["SingleBlockBrushShape"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.SingleBlockBrushShape,
@@ -1926,8 +1928,13 @@ var __webpack_exports__ = {};
         ["WidgetCollisionType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetCollisionType,
         ["WidgetComponentRenderPrimitiveTypeAxialSphere"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeAxialSphere,
         ["WidgetComponentRenderPrimitiveTypeBox"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeBox,
+        ["WidgetComponentRenderPrimitiveTypeCone"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeCone,
+        ["WidgetComponentRenderPrimitiveTypeCuboid"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeCuboid,
+        ["WidgetComponentRenderPrimitiveTypeCylinder"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeCylinder,
         ["WidgetComponentRenderPrimitiveTypeDisc"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeDisc,
+        ["WidgetComponentRenderPrimitiveTypeEllipsoid"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeEllipsoid,
         ["WidgetComponentRenderPrimitiveTypeLine"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypeLine,
+        ["WidgetComponentRenderPrimitiveTypePyramid"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetComponentRenderPrimitiveTypePyramid,
         ["WidgetGizmoEventType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetGizmoEventType,
         ["WidgetGroupSelectionMode"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetGroupSelectionMode,
         ["WidgetMouseButtonActionType"]: () => __WEBPACK_EXTERNAL_MODULE__minecraft_server_editor_81aed4a5__.WidgetMouseButtonActionType,
@@ -5459,6 +5466,64 @@ var __webpack_exports__ = {};
         const vec = Vector3Utils.scale(getDirectionVector(direction), scaleValue);
         return vec;
     }
+    const VALID_BLOCK_FACES = new Set([ "Up", "Down", "North", "South", "East", "West" ]);
+    function toBlockFace(face) {
+        if (VALID_BLOCK_FACES.has(face)) {
+            return face;
+        }
+        throw new Error(`Unexpected block face value: '${face}'`);
+    }
+    function getFaceNormal(face) {
+        switch (face) {
+          case "Up":
+            return {
+                x: 0,
+                y: 1,
+                z: 0
+            };
+
+          case "Down":
+            return {
+                x: 0,
+                y: -1,
+                z: 0
+            };
+
+          case "North":
+            return {
+                x: 0,
+                y: 0,
+                z: 1
+            };
+
+          case "South":
+            return {
+                x: 0,
+                y: 0,
+                z: -1
+            };
+
+          case "East":
+            return {
+                x: 1,
+                y: 0,
+                z: 0
+            };
+
+          case "West":
+            return {
+                x: -1,
+                y: 0,
+                z: 0
+            };
+
+          default:
+            {
+                const _exhaustive = face;
+                throw new Error("Unhandled block face");
+            }
+        }
+    }
     function shrinkVolumeAlongAbsoluteAxis(volume, direction, amount, worldBounds) {
         const bounds = volume.getBoundingBox();
         const size = server_namespaceObject.BlockBoundingBoxUtils.getSpan(bounds);
@@ -6723,6 +6788,10 @@ var __webpack_exports__ = {};
             message: ""
         };
     }
+    function biomeIdToLocalizationKey(biomeType) {
+        const id = biomeType.id.replace("minecraft:", "");
+        return `biome.${id}.name`;
+    }
     class CustomSet {
         constructor(hashFunction) {
             this.values = new Map;
@@ -6867,6 +6936,76 @@ var __webpack_exports__ = {};
         return markupStart.concat("~]");
     }
     const newLineMarkup = "[~*newLine~]";
+    function degreesToRadians(degrees) {
+        return degrees * Math.PI / 180;
+    }
+    function radiansToDegrees(radians) {
+        return radians * 180 / Math.PI;
+    }
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+    function multiplyQuaternions(left, right) {
+        return {
+            w: left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+            x: left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+            y: left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+            z: left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w
+        };
+    }
+    function quaternionFromAxisAngle(axis, radians) {
+        const half = radians / 2;
+        const sinHalf = Math.sin(half);
+        return {
+            x: axis.x * sinHalf,
+            y: axis.y * sinHalf,
+            z: axis.z * sinHalf,
+            w: Math.cos(half)
+        };
+    }
+    function quaternionToXyzIntrinsicEulerRadians(quaternion) {
+        const {w: quatW, x: quatX, y: quatY, z: quatZ} = quaternion;
+        const sinY = 2 * (quatW * quatY + quatX * quatZ);
+        const yRadians = Math.asin(clamp(sinY, -1, 1));
+        const xNumerator = 2 * (quatW * quatX - quatY * quatZ);
+        const xDenominator = 1 - 2 * (quatX * quatX + quatY * quatY);
+        const xRadians = Math.atan2(xNumerator, xDenominator);
+        const zNumerator = 2 * (quatW * quatZ - quatX * quatY);
+        const zDenominator = 1 - 2 * (quatY * quatY + quatZ * quatZ);
+        const zRadians = Math.atan2(zNumerator, zDenominator);
+        return {
+            x: xRadians,
+            y: yRadians,
+            z: zRadians
+        };
+    }
+    function convertGenerationRotationToWidgetRotation(rotation) {
+        const xRadians = degreesToRadians(rotation.x);
+        const yRadians = degreesToRadians(rotation.y);
+        const zRadians = degreesToRadians(rotation.z);
+        const yAxisRotation = quaternionFromAxisAngle({
+            x: 0,
+            y: 1,
+            z: 0
+        }, yRadians);
+        const xAxisRotation = quaternionFromAxisAngle({
+            x: 1,
+            y: 0,
+            z: 0
+        }, xRadians);
+        const zAxisRotation = quaternionFromAxisAngle({
+            x: 0,
+            y: 0,
+            z: 1
+        }, zRadians);
+        const combinedRotation = multiplyQuaternions(zAxisRotation, multiplyQuaternions(xAxisRotation, yAxisRotation));
+        const widgetEulerRadians = quaternionToXyzIntrinsicEulerRadians(combinedRotation);
+        return {
+            x: radiansToDegrees(widgetEulerRadians.x),
+            y: radiansToDegrees(widgetEulerRadians.y),
+            z: radiansToDegrees(widgetEulerRadians.z)
+        };
+    }
     class SharedControlImpl {
         constructor(session, parentTool, parentPropertyPane, controlName, localizationPrefix) {
             this._session = session;
@@ -7531,6 +7670,8 @@ var __webpack_exports__ = {};
             this._updateSettingsOperationTickHandle = undefined;
             this._editorMode = server_editor_namespaceObject.EditorMode.Tool;
             this._needsRefresh = false;
+            this._isClamping = false;
+            this._skipNextSetBrushVolume = false;
             this._displayShapeSettings = true;
             this._blockMaskKey = `${this.tool.id}_BlockMask_Mask`;
             this._blockReplaceKey = `${this.tool.id}_BlockMask_Replace`;
@@ -7550,70 +7691,72 @@ var __webpack_exports__ = {};
             if (!this.tool) {
                 throw new Error("SharedControl tool is not set");
             }
-            const offsetNudgeUpAction = this.session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._nudgeOffset(lib.VECTOR3_UP);
-                }
-            });
-            const offsetNudgeDownAction = this.session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._nudgeOffset(lib.VECTOR3_DOWN);
-                }
-            });
-            const offsetNudgeForwardAction = this.session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Forward);
-                    this._nudgeOffset(nudgeVector);
-                }
-            });
-            const offsetNudgeBackAction = this.session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Back);
-                    this._nudgeOffset(nudgeVector);
-                }
-            });
-            const offsetNudgeLeftAction = this.session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Left);
-                    this._nudgeOffset(nudgeVector);
-                }
-            });
-            const offsetNudgeRightAction = this.session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Right);
-                    this._nudgeOffset(nudgeVector);
-                }
-            });
-            this.registerToolKeyBinding(offsetNudgeUpAction, {
-                key: server_editor_namespaceObject.KeyboardKey.PAGE_UP,
-                modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
-            }, "nudgeOffsetUp");
-            this.registerToolKeyBinding(offsetNudgeDownAction, {
-                key: server_editor_namespaceObject.KeyboardKey.PAGE_DOWN,
-                modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
-            }, "nudgeOffsetDown");
-            this.registerToolKeyBinding(offsetNudgeForwardAction, {
-                key: server_editor_namespaceObject.KeyboardKey.UP,
-                modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
-            }, "nudgeOffsetForward");
-            this.registerToolKeyBinding(offsetNudgeBackAction, {
-                key: server_editor_namespaceObject.KeyboardKey.DOWN,
-                modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
-            }, "nudgeOffsetBack");
-            this.registerToolKeyBinding(offsetNudgeLeftAction, {
-                key: server_editor_namespaceObject.KeyboardKey.LEFT,
-                modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
-            }, "nudgeOffsetLeft");
-            this.registerToolKeyBinding(offsetNudgeRightAction, {
-                key: server_editor_namespaceObject.KeyboardKey.RIGHT,
-                modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
-            }, "nudgeOffsetRight");
+            if (!this._options?.disableNudgeBindings) {
+                const offsetNudgeUpAction = this.session.actionManager.createAction({
+                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                    onExecute: () => {
+                        this._nudgeOffset(lib.VECTOR3_UP);
+                    }
+                });
+                const offsetNudgeDownAction = this.session.actionManager.createAction({
+                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                    onExecute: () => {
+                        this._nudgeOffset(lib.VECTOR3_DOWN);
+                    }
+                });
+                const offsetNudgeForwardAction = this.session.actionManager.createAction({
+                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                    onExecute: () => {
+                        const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Forward);
+                        this._nudgeOffset(nudgeVector);
+                    }
+                });
+                const offsetNudgeBackAction = this.session.actionManager.createAction({
+                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                    onExecute: () => {
+                        const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Back);
+                        this._nudgeOffset(nudgeVector);
+                    }
+                });
+                const offsetNudgeLeftAction = this.session.actionManager.createAction({
+                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                    onExecute: () => {
+                        const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Left);
+                        this._nudgeOffset(nudgeVector);
+                    }
+                });
+                const offsetNudgeRightAction = this.session.actionManager.createAction({
+                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                    onExecute: () => {
+                        const nudgeVector = this._getRelativeNudgeDirection(direction_Direction.Right);
+                        this._nudgeOffset(nudgeVector);
+                    }
+                });
+                this.registerToolKeyBinding(offsetNudgeUpAction, {
+                    key: server_editor_namespaceObject.KeyboardKey.PAGE_UP,
+                    modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
+                }, "nudgeOffsetUp");
+                this.registerToolKeyBinding(offsetNudgeDownAction, {
+                    key: server_editor_namespaceObject.KeyboardKey.PAGE_DOWN,
+                    modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
+                }, "nudgeOffsetDown");
+                this.registerToolKeyBinding(offsetNudgeForwardAction, {
+                    key: server_editor_namespaceObject.KeyboardKey.UP,
+                    modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
+                }, "nudgeOffsetForward");
+                this.registerToolKeyBinding(offsetNudgeBackAction, {
+                    key: server_editor_namespaceObject.KeyboardKey.DOWN,
+                    modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
+                }, "nudgeOffsetBack");
+                this.registerToolKeyBinding(offsetNudgeLeftAction, {
+                    key: server_editor_namespaceObject.KeyboardKey.LEFT,
+                    modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
+                }, "nudgeOffsetLeft");
+                this.registerToolKeyBinding(offsetNudgeRightAction, {
+                    key: server_editor_namespaceObject.KeyboardKey.RIGHT,
+                    modifier: server_editor_namespaceObject.InputModifier.Control | server_editor_namespaceObject.InputModifier.Shift
+                }, "nudgeOffsetRight");
+            }
             const cycleMaskAction = this.session.actionManager.createAction({
                 actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
                 onExecute: () => {
@@ -7661,6 +7804,7 @@ var __webpack_exports__ = {};
             }), 20);
             this._brushControlRootPane?.show();
             this._setBrushVolume();
+            this._skipNextSetBrushVolume = true;
             this.activateVisualization();
         }
         deactivateControl() {
@@ -7675,6 +7819,7 @@ var __webpack_exports__ = {};
             if (this._updateSettingsOperationTickHandle !== undefined) {
                 server_namespaceObject.system.clearRun(this._updateSettingsOperationTickHandle);
             }
+            this._skipNextSetBrushVolume = false;
             this._brushControlRootPane?.hide();
         }
         activateVisualization() {
@@ -7732,7 +7877,10 @@ var __webpack_exports__ = {};
             if (this._brushControlRootPane) {
                 this._destroyControlUI();
             }
-            this._brushControlRootPane = this.propertyPane.createSubPane({
+            this._brushControlRootPane = this.propertyPane.createSubPane(this._options?.flatShapeSettings ? {
+                hasExpander: false,
+                hasMargins: this._options?.hasPaneMargins
+            } : {
                 title: this._locFunction(BrushPaintControlStringKeys.RootPaneTitle),
                 infoTooltip: {
                     title: this._locFunction(BrushPaintControlStringKeys.RootPaneTitle),
@@ -7744,16 +7892,29 @@ var __webpack_exports__ = {};
                 if (this._brushShapes.length <= 1) {
                     this._displayShapeSettings = false;
                 }
-                this._brushShapeDropdown = this._brushControlRootPane.addDropdown(this._selectedBrushIndex, {
-                    title: this._locFunction(BrushPaintControlStringKeys.BrushShapeSelectionTitle),
-                    tooltip: this._locFunction(BrushPaintControlStringKeys.BrushShapeSelectionTooltip),
-                    entries: this._getBrushShapeDropdownEntries(),
-                    onChange: () => {
-                        this._setBrushVolume();
-                        this._updateSettingsSubPane();
-                        this._options?.onShapeChange?.(this._getSelectedBrushShape());
-                    }
-                });
+            }
+            this._brushShapeDropdown = this._brushControlRootPane.addDropdown(this._selectedBrushIndex, {
+                title: this._locFunction(BrushPaintControlStringKeys.BrushShapeSelectionTitle),
+                tooltip: this._locFunction(BrushPaintControlStringKeys.BrushShapeSelectionTooltip),
+                entries: this._getBrushShapeDropdownEntries(),
+                onChange: () => {
+                    this._setBrushVolume();
+                    this._updateSettingsSubPane();
+                    this._options?.onShapeChange?.(this._getSelectedBrushShape());
+                }
+            });
+            this._brushSettingsSubPane = this._brushControlRootPane.createSubPane(this._options?.flatShapeSettings ? {
+                hasExpander: false,
+                hasMargins: false
+            } : {
+                title: this._locFunction(BrushPaintControlStringKeys.BrushShapeSettingsTitle),
+                infoTooltip: {
+                    title: this._locFunction(BrushPaintControlStringKeys.BrushShapeSettingsTitle),
+                    description: [ this._locFunction(BrushPaintControlStringKeys.BrushShapeSettingsTooltip) ]
+                }
+            });
+            this._updateSettingsSubPane();
+            if (!this._options?.hideOffset) {
                 this._brushShapeOffset.set(this.session.extensionContext.brushShapeManager.getBrushShapeOffset());
                 this._brushControlRootPane.addVector3(this._brushShapeOffset, {
                     title: this._locFunction(BrushPaintControlStringKeys.OffsetTitle),
@@ -7767,14 +7928,6 @@ var __webpack_exports__ = {};
                     }
                 });
             }
-            this._brushSettingsSubPane = this._brushControlRootPane.createSubPane({
-                title: this._locFunction(BrushPaintControlStringKeys.BrushShapeSettingsTitle),
-                infoTooltip: {
-                    title: this._locFunction(BrushPaintControlStringKeys.BrushShapeSettingsTitle),
-                    description: [ this._locFunction(BrushPaintControlStringKeys.BrushShapeSettingsTooltip) ]
-                }
-            });
-            this._updateSettingsSubPane();
             if (!this._options?.hideFillConstraints) {
                 this._fillConstraintsSubPane = this._brushControlRootPane.createSubPane({
                     title: this._locFunction(BrushPaintControlStringKeys.FillConstraintsTitle),
@@ -7925,6 +8078,9 @@ var __webpack_exports__ = {};
             return this._brushShapes[currentBrushIndex];
         }
         _clampToMaxBlockVolume(brushShape, maxBlockVolume) {
+            if (this._isClamping) {
+                return;
+            }
             const currentBlockCount = brushShape.estimateBlockCount();
             if (currentBlockCount <= maxBlockVolume) {
                 return;
@@ -7933,25 +8089,71 @@ var __webpack_exports__ = {};
             if (!settings) {
                 return;
             }
-            const SAFETY_MARGIN = .95;
-            const scaleFactor = Math.cbrt(maxBlockVolume / currentBlockCount) * SAFETY_MARGIN;
-            const clampDimension = value => Math.max(1, Math.floor(value * scaleFactor));
-            const clampedSettings = {
-                ...settings
-            };
-            if ("width" in clampedSettings && typeof clampedSettings.width === "number") {
-                clampedSettings.width = clampDimension(clampedSettings.width);
+            const dims = {};
+            for (const key of [ "radius", "width", "height", "depth" ]) {
+                if (key in settings) {
+                    const val = settings[key];
+                    if (typeof val === "number") {
+                        dims[key] = val;
+                    }
+                }
             }
-            if ("height" in clampedSettings && typeof clampedSettings.height === "number") {
-                clampedSettings.height = clampDimension(clampedSettings.height);
+            const dimKeys = Object.keys(dims);
+            if (dimKeys.length === 0) {
+                return;
             }
-            if ("depth" in clampedSettings && typeof clampedSettings.depth === "number") {
-                clampedSettings.depth = clampDimension(clampedSettings.depth);
+            const scaleFactor = Math.cbrt(maxBlockVolume / currentBlockCount);
+            for (const key of dimKeys) {
+                dims[key] = Math.max(1, Math.floor(dims[key] * scaleFactor));
             }
-            if ("radius" in clampedSettings && typeof clampedSettings.radius === "number") {
-                clampedSettings.radius = clampDimension(clampedSettings.radius);
+            this._isClamping = true;
+            try {
+                const applyDims = () => {
+                    const updated = {
+                        ...settings
+                    };
+                    for (const key of dimKeys) {
+                        updated[key] = dims[key];
+                    }
+                    brushShape.applySetting(updated);
+                };
+                applyDims();
+                const MAX_ITERATIONS = 50;
+                for (let i = 0; i < MAX_ITERATIONS && brushShape.estimateBlockCount() > maxBlockVolume; i++) {
+                    let largestKey;
+                    let largestVal = 0;
+                    for (const key of dimKeys) {
+                        if (dims[key] > largestVal) {
+                            largestVal = dims[key];
+                            largestKey = key;
+                        }
+                    }
+                    if (!largestKey || largestVal <= 1) break;
+                    dims[largestKey] = largestVal - 1;
+                    applyDims();
+                }
+                for (let i = 0; i < MAX_ITERATIONS; i++) {
+                    let smallestKey;
+                    let smallestVal = Infinity;
+                    for (const key of dimKeys) {
+                        if (dims[key] < smallestVal) {
+                            smallestVal = dims[key];
+                            smallestKey = key;
+                        }
+                    }
+                    if (!smallestKey) break;
+                    const prevVal = dims[smallestKey];
+                    dims[smallestKey] = prevVal + 1;
+                    applyDims();
+                    if (brushShape.estimateBlockCount() > maxBlockVolume) {
+                        dims[smallestKey] = prevVal;
+                        applyDims();
+                        break;
+                    }
+                }
+            } finally {
+                this._isClamping = false;
             }
-            brushShape.applySetting(clampedSettings);
             this._needsRefresh = true;
             const newBlockCount = brushShape.estimateBlockCount();
             this._options?.onVolumeClamped?.(newBlockCount, maxBlockVolume);
@@ -7960,9 +8162,15 @@ var __webpack_exports__ = {};
             if (this._options?.shouldSkipBrushVolumeUpdate?.()) {
                 return;
             }
+            if (this._skipNextSetBrushVolume && this._currentBrushVolume) {
+                this._skipNextSetBrushVolume = false;
+                return;
+            }
+            this._skipNextSetBrushVolume = false;
             try {
                 const brush = this._getSelectedBrushShape();
-                this.session.extensionContext.brushShapeManager.setBrushShape(brush.createShape());
+                this._currentBrushVolume = brush.createShape();
+                this.session.extensionContext.brushShapeManager.setBrushShape(this._currentBrushVolume);
             } catch (e) {
                 this.session.log.error(`Error updating brush: ${stringFromException(e)}`, {
                     channelMask: server_editor_namespaceObject.LogChannel.All
@@ -7994,7 +8202,7 @@ var __webpack_exports__ = {};
                     }
                 }
                 this._options?.onSettingsChange?.(brushShape);
-            }));
+            }), this._options?.flatShapeSettings);
             this._customSettingsSubPane?.show();
             if (this._customSettingsSubPane) {
                 this._brushSettingsSubPane.show();
@@ -8211,6 +8419,9 @@ var __webpack_exports__ = {};
     const KEY_REPEAT_DELAY = 5;
     const KEY_REPEAT_INTERVAL = 1;
     class CursorModeControl extends SharedControlImpl {
+        get controlMode() {
+            return this._mouseControlMode.value;
+        }
         get cursorProperties() {
             const props = {
                 ...this._overrideCursorProperties,
@@ -8228,6 +8439,11 @@ var __webpack_exports__ = {};
             this._cursorTargetMode = (0, server_editor_namespaceObject.makeObservable)(server_editor_namespaceObject.CursorTargetMode.Block);
             this._projectThroughWater = (0, server_editor_namespaceObject.makeObservable)(true);
             this._fixedDistanceCursor = (0, server_editor_namespaceObject.makeObservable)(5);
+            this._brushShapeOffset = (0, server_editor_namespaceObject.makeObservable)({
+                x: 0,
+                y: 0,
+                z: 0
+            });
             this._canMoveManually = () => true;
             this._updateCursorProperties = (session, isActivationUpdate, cursorControlMode, cursorTargetMode, fixedDistanceValue, fixedDistanceSliderControl, isSaveSettings = true) => {
                 const cursorProperties = {
@@ -8649,6 +8865,20 @@ var __webpack_exports__ = {};
                     }
                 }));
             }
+            if (this._options?.enableBrushShapeOffsetControl) {
+                this._brushShapeOffset.set(this.session.extensionContext.brushShapeManager.getBrushShapeOffset());
+                this._controlRootPane.addVector3(this._brushShapeOffset, {
+                    title: "resourcePack.editor.BrushPaintControl.offset.title",
+                    tooltip: "resourcePack.editor.BrushPaintControl.offset.tooltip",
+                    isInteger: true,
+                    min: CursorModeControl.MIN_OFFSET,
+                    max: CursorModeControl.MAX_OFFSET,
+                    onChange: newValue => {
+                        this.session.extensionContext.brushShapeManager.setBrushShapeOffset(newValue);
+                        this._options?.onOffsetChange?.(newValue);
+                    }
+                });
+            }
         }
         _loadSettings() {
             const option = {
@@ -8685,6 +8915,16 @@ var __webpack_exports__ = {};
     }
     CursorModeControl.MAX_FIXED_DISTANCE = 32;
     CursorModeControl.MIN_FIXED_DISTANCE = 1;
+    CursorModeControl.MIN_OFFSET = {
+        x: -100,
+        y: -100,
+        z: -100
+    };
+    CursorModeControl.MAX_OFFSET = {
+        x: 100,
+        y: 100,
+        z: 100
+    };
     const gameModeLookUpIndex = {
         Survival: 0,
         Creative: 1,
@@ -9569,6 +9809,7 @@ var __webpack_exports__ = {};
         TelemetrySource["ChunkManagement"] = "CHUNK_MANAGEMENT";
         TelemetrySource["FloodTool"] = "FLOOD_TOOL";
         TelemetrySource["Cinematic"] = "CINEMATIC";
+        TelemetrySource["Primitives"] = "PRIMITIVES";
     })(TelemetrySource || (TelemetrySource = {}));
     function fireTelemetryEvent(player, source, eventName, properties = {}) {
         if (SHOULD_LOG_TELEMETRY) {
@@ -14036,10 +14277,23 @@ var __webpack_exports__ = {};
         constructor(uiSession) {
             this._lastPlayTestAvailability = false;
             this._persistenceManager = getPersistenceManager(uiSession.extensionContext.player);
+            this._panelAction = uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                onExecute: () => {
+                    this._propertyPane?.show();
+                }
+            });
             this._playTestData = this.loadPlayTestSettings();
-            this._extensionMenuItem = this.addMenuItem(uiSession);
             this._propertyPane = this.buildPropertyPane(uiSession);
+            uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, this._panelAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:playTest",
+                label: "resourcePack.editor.playtest.keyBinding.label",
+                tooltip: "resourcePack.editor.playtest.keyBinding.tooltip"
+            });
             this.registerActionBarItem(uiSession);
+            this._extensionMenuItem = this.addMenuItem(uiSession);
             this._tickRunId = server_namespaceObject.system.runInterval((() => {
                 const readyCondition = uiSession.extensionContext.playtest.getPlaytestSessionAvailability();
                 const isReady = readyCondition === server_editor_namespaceObject.PlaytestSessionResult.OK;
@@ -14056,22 +14310,11 @@ var __webpack_exports__ = {};
             const playtestMenuItem = coreMenuItems?.file.addItem({
                 label: "resourcePack.editor.playtest.Menu.Title",
                 tooltip: "resourcePack.editor.playtest.Dialog.tooltip"
-            }, uiSession.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._propertyPane?.show();
-                }
-            }));
+            }, this._panelAction);
             return playtestMenuItem;
         }
         registerActionBarItem(uiSession) {
-            const showPlaytestAction = uiSession.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._propertyPane?.show();
-                }
-            });
-            uiSession.actionBar.registerItem(server_editor_namespaceObject.CoreActionBarItemType.Playtest, showPlaytestAction, {
+            uiSession.actionBar.registerItem(server_editor_namespaceObject.CoreActionBarItemType.Playtest, this._panelAction, {
                 label: "resourcePack.editor.playtest.Menu.Title",
                 icon: "pack://textures/editor/Play.png",
                 tooltipTitle: "resourcePack.editor.playtest.Menu.Title",
@@ -15103,6 +15346,7 @@ var __webpack_exports__ = {};
             this._showVolumes();
         }
         deactivate(_toolActive, _switchingModes) {
+            this._cancelThreePointSelect();
             if (_toolActive) {
                 this._modePane.hide();
             }
@@ -15125,6 +15369,7 @@ var __webpack_exports__ = {};
             }
         }
         clearSelection() {
+            this._cancelThreePointSelect();
             this.parent.performSingleTransactionableOperation((() => {
                 this.session.extensionContext.selectionManager.volume.clear();
                 this._clearVolumeStack();
@@ -15227,7 +15472,7 @@ var __webpack_exports__ = {};
                 return;
             }
             const mouseHit = this.session.extensionContext.cursor.getRay();
-            volume.toggleCornerGizmos((!volume.isShiftDown || volume.threePointSelectionState === ThreePointSelectionState.NoPoints) && !this._override3PointSelectMousePreview);
+            volume.toggleCornerGizmos((!volume.isShiftDown || !this._isThreePointSelectActive(volume)) && !this._override3PointSelectMousePreview);
             if (!volume.isShiftDown && !this._override3PointSelectMousePreview) {
                 if (this._shiftTickHandle) {
                     server_namespaceObject.system.clearRun(this._shiftTickHandle);
@@ -15267,7 +15512,7 @@ var __webpack_exports__ = {};
                 this.parent.beginTransactionableOperation("Marquee Selection Operation");
             }
             if (!isCtrlDown && currVolume) {
-                const shouldClear = !threePointSelectionEnabled ? !isShiftDown : !this._override3PointSelectMousePreview && (!isShiftDown || currVolume.threePointSelectionState === ThreePointSelectionState.NoPoints);
+                const shouldClear = !threePointSelectionEnabled ? !isShiftDown : !this._override3PointSelectMousePreview && (!isShiftDown || !this._isThreePointSelectActive(currVolume));
                 if (shouldClear) {
                     this._clearVolumeStack();
                 }
@@ -15278,7 +15523,7 @@ var __webpack_exports__ = {};
                 currVolume = this._createVolume(new server_namespaceObject.BlockVolume(this._currCursorBlockLocation, this._currCursorBlockLocation), true);
                 currVolume.firstCorner = this._currCursorBlockLocation;
                 currVolume.secondCorner = this._currCursorBlockLocation;
-                currVolume.threePointSelectionState = threePointSelectionEnabled ? ThreePointSelectionState.FirstCorner : ThreePointSelectionState.NoPoints;
+                currVolume.threePointSelectionState = threePointSelectionEnabled && isShiftDown ? ThreePointSelectionState.FirstCorner : ThreePointSelectionState.NoPoints;
                 currVolume.state = MarqueeSelectionVolumeState.Idle;
                 this._determineCursorFaceDirectionAxisLock();
                 this.applyVolumeStackToSelectionManager();
@@ -15343,7 +15588,7 @@ var __webpack_exports__ = {};
             } else if (isShiftDown && !lib.Vector3Utils.equals(currVolume.from, this._currCursorBlockLocation) && this._isValidCornerPoint(currVolume.from, this._currCursorBlockLocation) && this._tryAssignVolumeTo(currVolume, this._currCursorBlockLocation)) {
                 currVolume.firstCorner = currVolume.from;
                 currVolume.secondCorner = currVolume.to;
-                currVolume.threePointSelectionState = ThreePointSelectionState.FirstCorner;
+                currVolume.threePointSelectionState = ThreePointSelectionState.NoPoints;
             }
             this.applyVolumeStackToSelectionManager();
         }
@@ -15354,7 +15599,7 @@ var __webpack_exports__ = {};
             if (!currVolume) {
                 return false;
             }
-            return currVolume.threePointSelectionState === ThreePointSelectionState.NoPoints || !isShiftDown && currVolume.threePointSelectionState !== ThreePointSelectionState.BottomFace && currVolume.state !== MarqueeSelectionVolumeState.Dragging;
+            return !this._isThreePointSelectActive(currVolume) || !isShiftDown && currVolume.threePointSelectionState !== ThreePointSelectionState.BottomFace && currVolume.state !== MarqueeSelectionVolumeState.Dragging;
         }
         _onLeftMouseDrag(isCtrlDown, isShiftDown, mouseRay) {
             if (!lib.Vector3Utils.equals(this._currCursorBlockLocation, mouseRay.cursorBlockLocation)) {
@@ -15379,6 +15624,7 @@ var __webpack_exports__ = {};
             if (threePointSelectionEnabled && !lib.Vector3Utils.equals(mouseRay.cursorBlockLocation, currVolume.from)) {
                 switch (currVolume.threePointSelectionState) {
                   case ThreePointSelectionState.FirstCorner:
+                  case ThreePointSelectionState.NoPoints:
                     {
                         currVolume.toggleCornerGizmos(false);
                         const newSecondCorner = calculatePlaneIntersection(currVolume.firstCorner ?? currVolume.from, playerCameraPosition, mouseRay.direction, this._cursorFaceDirectionAxisLock);
@@ -15388,10 +15634,10 @@ var __webpack_exports__ = {};
                                 currVolume.secondCorner = currVolume.to;
                             }
                         }
+                        currVolume.threePointSelectionState = ThreePointSelectionState.FirstCorner;
                         break;
                     }
 
-                  case ThreePointSelectionState.NoPoints:
                   case ThreePointSelectionState.BottomFace:
                   default:
                     {
@@ -15570,7 +15816,11 @@ var __webpack_exports__ = {};
         applyVolumeStackToSelectionManager() {
             const newVolume = new server_editor_namespaceObject.RelativeVolumeListBlockVolume;
             this._volumeStack.forEach((volume => {
-                newVolume.add(volume.blockVolume);
+                if (this._parent.isSimpleSelectEnabled()) {
+                    newVolume.add(volume.blockVolume);
+                } else if (!this._isThreePointSelectActive(volume)) {
+                    newVolume.add(volume.blockVolume);
+                }
             }));
             this.session.extensionContext.selectionManager.volume.set(newVolume);
         }
@@ -15578,6 +15828,7 @@ var __webpack_exports__ = {};
             this.session.extensionContext.selectionManager.volume.clear();
         }
         _clearVolumeStack() {
+            this._cancelThreePointSelect();
             this._volumeStack.forEach((volume => {
                 volume.teardown();
             }));
@@ -15618,13 +15869,30 @@ var __webpack_exports__ = {};
                 volume.teardown();
             }
         }
+        _cancelThreePointSelect() {
+            const currVolume = this._currentVolume();
+            if (currVolume && this._isThreePointSelectActive(currVolume)) {
+                if (this.parent.isTransactionOperationActive()) {
+                    this.parent.cancelTransactionableOperation();
+                }
+                currVolume.threePointSelectionState = ThreePointSelectionState.NoPoints;
+                this._volumeStack.pop();
+                currVolume.teardown();
+            }
+        }
+        _isThreePointSelectActive(volume = undefined) {
+            const currVolume = volume ? volume : this._currentVolume();
+            return currVolume ? currVolume.threePointSelectionState !== ThreePointSelectionState.NoPoints : false;
+        }
         fillTransactionPayload(_payload) {
             _payload.mode = this.modeType;
             _payload.volumes = [];
             this._volumeStack.forEach((volume => {
-                const relativeVolume = new server_editor_namespaceObject.RelativeVolumeListBlockVolume;
-                relativeVolume.add(volume.blockVolume);
-                _payload.volumes.push(relativeVolume);
+                if (this._parent.isSimpleSelectEnabled() || !this._isThreePointSelectActive(volume)) {
+                    const relativeVolume = new server_editor_namespaceObject.RelativeVolumeListBlockVolume;
+                    relativeVolume.add(volume.blockVolume);
+                    _payload.volumes.push(relativeVolume);
+                }
             }));
         }
         applyUndo(_payload) {
@@ -18278,6 +18546,9 @@ var __webpack_exports__ = {};
                     this._telemetryManager.fireTelemetryEvent(SelectionTelemetry.QuickAction, {
                         action: "DeselectBlocks"
                     });
+                    if (!this.isTransactionOperationActive()) {
+                        this.beginTransactionableOperation(SelectionBehavior.DESELECT_OPERATION_NAME);
+                    }
                     const blocksRemoved = await this.session.extensionContext.selectionManager.deselectBlocks(fullBlockId);
                     this.session.log.info(`Removed ${blocksRemoved} block${blocksRemoved !== 1 ? "s" : ""} of type ${blockId}`, {
                         channelMask: server_editor_namespaceObject.LogChannel.Toast
@@ -18286,6 +18557,9 @@ var __webpack_exports__ = {};
                     await this._startManifestGeneration();
                     if (selectionModeAtStart === SelectionToolMode.Marquee) {
                         this._internalChangeVolumeContentsNotification();
+                    }
+                    if (this.isTransactionOperationActive()) {
+                        this.endTransactionableOperation();
                     }
                 } catch (err) {
                     this.session.log.error(`Deselect operation failed: ${err.message}`, {
@@ -18315,7 +18589,13 @@ var __webpack_exports__ = {};
                     this._telemetryManager.fireTelemetryEvent(SelectionTelemetry.QuickAction, {
                         action: "ReplaceBlocks"
                     });
+                    if (!this.isTransactionOperationActive()) {
+                        this.beginTransactionableOperation(SelectionBehavior.REPLACE_OPERATION_NAME);
+                    }
                     const blocksReplaced = await this.session.extensionContext.selectionManager.replaceBlocks(fullBlockId, fullNewBlockId);
+                    if (this.isTransactionOperationActive()) {
+                        this.endTransactionableOperation();
+                    }
                     this.session.log.info(`Replaced ${blocksReplaced} block${blocksReplaced !== 1 ? "s" : ""} from ${blockId} to ${newBlockId}`, {
                         channelMask: server_editor_namespaceObject.LogChannel.Toast
                     });
@@ -18584,18 +18864,24 @@ var __webpack_exports__ = {};
             if (this.selectionCreationMode === undefined) {
                 throw new Error("Cannot begin a transactionable operation while no mode is active");
             }
+            const currentMode = this._selectionMode.value;
             this._temporaryTransactionData = {
                 oldVolumeStack: {
-                    mode: SelectionToolMode.Marquee,
+                    mode: currentMode,
                     volumes: []
                 },
                 newVolumeStack: {
-                    mode: SelectionToolMode.Marquee,
+                    mode: currentMode,
                     volumes: []
                 },
                 name: _name
             };
             this.selectionCreationMode?.fillTransactionPayload(this._temporaryTransactionData.oldVolumeStack);
+            if (SelectionBehavior.REPLACE_OPERATION_NAME === _name) {
+                this.session.extensionContext.transactionManager.openTransaction("Selection");
+                const volume = this.session.extensionContext.selectionManager.volume.get();
+                this.session.extensionContext.transactionManager.trackBlockChangeVolume(volume);
+            }
         }
         endTransactionableOperation() {
             if (this._temporaryTransactionData === undefined) {
@@ -18605,6 +18891,8 @@ var __webpack_exports__ = {};
                 throw new Error("Cannot end a transactionable operation while no mode is active");
             }
             this.selectionCreationMode?.fillTransactionPayload(this._temporaryTransactionData.newVolumeStack);
+            const currentMode = this._selectionMode.value;
+            this._temporaryTransactionData.newVolumeStack.mode = currentMode;
             this.createTransaction(this._temporaryTransactionData, this._temporaryTransactionData.name ?? "Selection (unnamed)");
             this._temporaryTransactionData = undefined;
         }
@@ -18612,8 +18900,10 @@ var __webpack_exports__ = {};
             this._temporaryTransactionData = undefined;
         }
         createTransaction(_payload, _name) {
-            this.session.extensionContext.transactionManager.openTransaction("Selection");
-            this.transactionHandler.addUserDefinedOperation(_payload, _name);
+            if (SelectionBehavior.REPLACE_OPERATION_NAME !== _name) {
+                this.session.extensionContext.transactionManager.openTransaction("Selection");
+                this.transactionHandler.addUserDefinedOperation(_payload, _name);
+            }
             this.session.extensionContext.transactionManager.commitOpenTransaction();
         }
         isTransactionOperationActive() {
@@ -19040,6 +19330,8 @@ var __webpack_exports__ = {};
         }
     }
     SelectionBehavior.MODAL_TOOL_ID = "editor:modalTool:selection";
+    SelectionBehavior.REPLACE_OPERATION_NAME = "ReplaceBlockOperation";
+    SelectionBehavior.DESELECT_OPERATION_NAME = "DeselectBlockOperation";
     class UndoRedoBehavior {
         constructor(uiSession, coreMenuItems) {
             this._canUndo = false;
@@ -19868,7 +20160,7 @@ var __webpack_exports__ = {};
             this._currentPreset = (0, server_editor_namespaceObject.makeObservable)(TODDropDown.None);
             this._storedSettings = new Map;
             this._messageSubscriptionHandle = undefined;
-            this.openMenuAction = this._uiSession.actionManager.createAction({
+            this.openPaneAction = this._uiSession.actionManager.createAction({
                 actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
                 onExecute: () => {
                     this._timeOfDayValue.set(server_namespaceObject.world.getTimeOfDay());
@@ -19877,6 +20169,13 @@ var __webpack_exports__ = {};
             });
             this._persistenceManager = getPersistenceManager(_uiSession.extensionContext.player);
             this.createMenuItem(_parentMenu);
+            this._uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, this.openPaneAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:timeOfDayPanel",
+                label: "resourcePack.editor.timeOfDay.keyBinding.label",
+                tooltip: "resourcePack.editor.timeOfDay.keyBinding.tooltip"
+            });
             this.telemetryManager = new TelemetryManager(_uiSession.extensionContext.player, TelemetrySource.TimeOfDay);
             this._pane = _uiSession.createPropertyPane({
                 title: "resourcePack.editor.timeOfDay.title",
@@ -20037,7 +20336,7 @@ var __webpack_exports__ = {};
             menu.addItem({
                 label: "resourcePack.editor.timeOfDay.menu.title",
                 tooltip: "resourcePack.editor.timeOfDay.menu.tooltip"
-            }, this.openMenuAction);
+            }, this.openPaneAction);
         }
         setDaylightCycle(daylightCycle, currentTime, uiSession) {
             this._daylightCycle.set(daylightCycle);
@@ -20200,7 +20499,7 @@ var __webpack_exports__ = {};
             this.lastUpdateTimestamp = 0;
             this.previousPlayerIds = new Set;
             this.initializedMinimapCache = false;
-            this.openMenuAction = this.uiSession.actionManager.createAction({
+            this.openPaneAction = this.uiSession.actionManager.createAction({
                 actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
                 onExecute: () => {
                     this.parentPane?.show();
@@ -20246,7 +20545,14 @@ var __webpack_exports__ = {};
             this.startStoredLocationsSynchronization();
             this.loadSettings();
             this._buildParentPane();
-            uiSession.actionBar.registerItem("editor:actionBarItem:goToMark", this.openMenuAction, {
+            uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, this.openPaneAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:navigationPanel",
+                label: "resourcePack.editor.goToMark.keyBinding.label",
+                tooltip: "resourcePack.editor.goToMark.keyBinding.tooltip"
+            });
+            uiSession.actionBar.registerItem("editor:actionBarItem:goToMark", this.openPaneAction, {
                 label: "resourcePack.editor.goToMark.title",
                 icon: "pack://textures/editor/goto-mark.png",
                 tooltipTitle: "resourcePack.editor.goToMark.actionBar.tooltip.title",
@@ -20276,7 +20582,7 @@ var __webpack_exports__ = {};
             menu.addItem({
                 label: "resourcePack.editor.goToMark.title",
                 tooltip: "resourcePack.editor.goToMark.menuTooltip"
-            }, this.openMenuAction);
+            }, this.openPaneAction);
         }
         _buildParentPane() {
             this.parentPane = this.uiSession.createPropertyPane({
@@ -22037,7 +22343,8 @@ var __webpack_exports__ = {};
                     this.toggleAxisLock(AxisLockState.X);
                 }
             }), {
-                key: server_editor_namespaceObject.KeyboardKey.KEY_X
+                key: server_editor_namespaceObject.KeyboardKey.KEY_X,
+                modifier: server_editor_namespaceObject.InputModifier.Shift | server_editor_namespaceObject.InputModifier.Control
             }, {
                 uniqueId: "editor:rulerTool:toggleXAxis",
                 label: "resourcePack.editor.toolRail.rulerTool.keyBinding.toggleXAxisLock.label",
@@ -22050,7 +22357,8 @@ var __webpack_exports__ = {};
                     this.toggleAxisLock(AxisLockState.Y);
                 }
             }), {
-                key: server_editor_namespaceObject.KeyboardKey.KEY_Y
+                key: server_editor_namespaceObject.KeyboardKey.KEY_Y,
+                modifier: server_editor_namespaceObject.InputModifier.Shift | server_editor_namespaceObject.InputModifier.Control
             }, {
                 uniqueId: "editor:rulerTool:toggleYAxis",
                 label: "resourcePack.editor.toolRail.rulerTool.keyBinding.toggleYAxisLock.label",
@@ -22063,7 +22371,8 @@ var __webpack_exports__ = {};
                     this.toggleAxisLock(AxisLockState.Z);
                 }
             }), {
-                key: server_editor_namespaceObject.KeyboardKey.KEY_Z
+                key: server_editor_namespaceObject.KeyboardKey.KEY_Z,
+                modifier: server_editor_namespaceObject.InputModifier.Shift | server_editor_namespaceObject.InputModifier.Control
             }, {
                 uniqueId: "editor:rulerTool:toggleZAxis",
                 label: "resourcePack.editor.toolRail.rulerTool.keyBinding.toggleZAxisLock.label",
@@ -23295,24 +23604,7 @@ var __webpack_exports__ = {};
             this._uiSession = _uiSession;
             this._exportStatusMessage = (0, server_editor_namespaceObject.makeObservable)("");
             this._exportPane = this.buildPropertyPane(this._uiSession);
-            this.createMenuItem(parentMenu);
-            this.addActionBarItem();
-        }
-        createMenuItem(menu) {
-            menu.addItem({
-                label: "resourcePack.editor.menuBar.file.export",
-                tooltip: "resourcePack.editor.menuBar.file.export.tooltip"
-            }, this._uiSession?.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    if (this._exportPane) {
-                        this._exportPane?.show();
-                    }
-                }
-            }));
-        }
-        addActionBarItem() {
-            const showExportPaneAction = this._uiSession.actionManager.createAction({
+            this._panelAction = this._uiSession?.actionManager.createAction({
                 actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
                 onExecute: () => {
                     if (this._exportPane) {
@@ -23320,7 +23612,24 @@ var __webpack_exports__ = {};
                     }
                 }
             });
-            this._uiSession.actionBar.registerItem(server_editor_namespaceObject.CoreActionBarItemType.Export, showExportPaneAction, {
+            this._uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, this._panelAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:exportProject",
+                label: "resourcePack.editor.exportProject.keyBinding.label",
+                tooltip: "resourcePack.editor.exportProject.keyBinding.tooltip"
+            });
+            this.createMenuItem(parentMenu);
+            this.addActionBarItem();
+        }
+        createMenuItem(menu) {
+            menu.addItem({
+                label: "resourcePack.editor.menuBar.file.export",
+                tooltip: "resourcePack.editor.menuBar.file.export.tooltip"
+            }, this._panelAction);
+        }
+        addActionBarItem() {
+            this._uiSession.actionBar.registerItem(server_editor_namespaceObject.CoreActionBarItemType.Export, this._panelAction, {
                 label: "resourcePack.editor.menuBar.file.export",
                 icon: "pack://textures/editor/Export.png",
                 tooltipTitle: "resourcePack.editor.menuBar.file.export",
@@ -23720,7 +24029,7 @@ var __webpack_exports__ = {};
             const listOfBiomes = server_namespaceObject.BiomeTypes.getAll().map((v => {
                 const id = v.id.replace("minecraft:", "");
                 const item = {
-                    label: id.split("_").map((word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())).join(" "),
+                    label: biomeIdToLocalizationKey(v),
                     value: id
                 };
                 return item;
@@ -23805,6 +24114,7 @@ var __webpack_exports__ = {};
             this._structureRotationIndex = (0, server_editor_namespaceObject.makeObservable)(0);
             this._structureMirrorX = (0, server_editor_namespaceObject.makeObservable)(false);
             this._structureMirrorZ = (0, server_editor_namespaceObject.makeObservable)(false);
+            this._includeAirBlocks = (0, server_editor_namespaceObject.makeObservable)(true);
             this._editorMode = server_editor_namespaceObject.EditorMode.Tool;
             this._fillVolume = async (dimension, volume, fillBlockType) => {
                 const operation = blockLocation => {
@@ -24006,7 +24316,8 @@ var __webpack_exports__ = {};
                 }
             });
             this.registerToolKeyBinding(mirrorXAction, {
-                key: server_editor_namespaceObject.KeyboardKey.KEY_X
+                key: server_editor_namespaceObject.KeyboardKey.KEY_X,
+                modifier: server_editor_namespaceObject.InputModifier.Shift | server_editor_namespaceObject.InputModifier.Control
             }, "toggleMirrorX");
             const mirrorZAction = this.session.actionManager.createAction({
                 actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
@@ -24019,7 +24330,8 @@ var __webpack_exports__ = {};
                 }
             });
             this.registerToolKeyBinding(mirrorZAction, {
-                key: server_editor_namespaceObject.KeyboardKey.KEY_Z
+                key: server_editor_namespaceObject.KeyboardKey.KEY_Z,
+                modifier: server_editor_namespaceObject.InputModifier.Shift | server_editor_namespaceObject.InputModifier.Control
             }, "toggleMirrorZ");
         }
         shutdown() {
@@ -24178,6 +24490,13 @@ var __webpack_exports__ = {};
                     }
                 }
             });
+            placementPane.addBool(this._includeAirBlocks, {
+                enable: true,
+                title: this.localize("includeAirBlocks"),
+                tooltip: {
+                    description: this.localize("includeAirBlocks.tooltip")
+                }
+            });
             this._controlPane.endConstruct();
         }
         _destroyControlUI() {
@@ -24323,14 +24642,15 @@ var __webpack_exports__ = {};
             }
             const vector3_half = new lib.Vector3Builder(0, 0, 0);
             const clipboardTarget = lib.Vector3Utils.add(location ?? this.session.extensionContext.cursor.getPosition(), vector3_half);
-            const transactionManager = this.session.extensionContext.transactionManager;
-            transactionManager.openTransaction("Paste Preview");
             const writeOptions = {
                 normalizedOrigin: calculateClipboardNormalizedAnchorValue(this._clipboardItem, this._structureHumanReadableOrigin.value),
                 offset: this._structureOffset.value,
                 mirror: this._getMirrorAxisFromBooleans(this._structureMirrorX.value, this._structureMirrorZ.value),
-                rotation: this._getRotationFromOrderedIndex(this._structureRotationIndex.value)
+                rotation: this._getRotationFromOrderedIndex(this._structureRotationIndex.value),
+                excludeAirBlocks: !this._includeAirBlocks.value
             };
+            const transactionManager = this.session.extensionContext.transactionManager;
+            transactionManager.openTransaction("Paste Preview");
             try {
                 const wroteOK = this._clipboardItem.writeToWorld(clipboardTarget, writeOptions);
                 if (!wroteOK) {
@@ -24358,7 +24678,8 @@ var __webpack_exports__ = {};
                 normalizedOrigin: calculateClipboardNormalizedAnchorValue(this._clipboardItem, this._structureHumanReadableOrigin.value),
                 offset: this._structureOffset.value,
                 mirror: this._getMirrorAxisFromBooleans(this._structureMirrorX.value, this._structureMirrorZ.value),
-                rotation: this._getRotationFromOrderedIndex(this._structureRotationIndex.value)
+                rotation: this._getRotationFromOrderedIndex(this._structureRotationIndex.value),
+                excludeAirBlocks: !this._includeAirBlocks.value
             };
             const writeVolume = this._clipboardItem.getPredictedWriteVolume(cursorTarget, writeOptions);
             const fillBlockType = server_namespaceObject.BlockTypes.get(lib_vanilla_MinecraftBlockTypes.Air);
@@ -24559,6 +24880,9 @@ var __webpack_exports__ = {};
                 onExecute: (_, mouseProps) => {
                     if (mouseProps.mouseAction === server_editor_namespaceObject.MouseActionType.LeftButton) {
                         if (mouseProps.inputType === server_editor_namespaceObject.MouseInputType.ButtonDown) {
+                            if (this._cursorModeControl.controlMode === server_editor_namespaceObject.CursorControlMode.Keyboard) {
+                                return;
+                            }
                             if (this._clipboardPreviewControl.isActive) {
                                 if (mouseProps.modifiers.ctrl) {
                                     this.telemetryManager.fireTelemetryEvent(PastePreviewTelemetry.PastePreviewIntoWorld, {
@@ -25215,12 +25539,16 @@ var __webpack_exports__ = {};
                 DEFAULT_INTENSITY: 100,
                 DEFAULT_SMOOTHING: 0,
                 DEFAULT_FLOOR_OVERRIDE: false,
+                DEFAULT_FLATTEN_BRUSH_HEIGHT: 12,
                 BRUSH_SHAPES: [ new server_editor_namespaceObject.CylinderBrushShape({
                     uniform: true,
                     height: 12,
                     radius: 10,
                     hideRotation: true
                 }), new server_editor_namespaceObject.CuboidBrushShape({
+                    uniform: true,
+                    height: 12,
+                    length: 10,
                     hideRotation: true
                 }) ],
                 SETTINGS_MAP: {
@@ -25820,7 +26148,13 @@ var __webpack_exports__ = {};
             const brushControl = new BrushPaintSharedControl(this._session, this._tool, this._toolPane, {
                 paintMode
             }, brushShapes, {
-                hideFillConstraints: !showMasksAndFilters
+                hideFillConstraints: !showMasksAndFilters,
+                onSettingsChange: () => {
+                    this._handleBrushSettingsChange();
+                },
+                onShapeChange: () => {
+                    this._handleBrushSettingsChange();
+                }
             });
             brushControl.initialize();
             return brushControl;
@@ -25977,6 +26311,9 @@ var __webpack_exports__ = {};
             }
         }
         _onTerrainModeChanged() {
+            if (!this._isActive || !this._brushControl.isActive) {
+                return;
+            }
             if (this._toolPane.visible) {
                 this._toolPane.hide();
             }
@@ -25987,21 +26324,24 @@ var __webpack_exports__ = {};
             this._brushControl.session.extensionContext.brushShapeManager.setBrushShapeOffset(terrainSettings.brushOffset);
             this._brushControl.displayShapeSettings(true);
             this._brushControl.toggleFillConstraintsVisibility(terrainSettings.showMasksAndFilters);
+            this._brushControl.updateBrushShapes(terrainSettings.brushShapes);
             if (this._terrainMode.value === TerrainMode.FlattenMode) {
                 this._onFlattenModeChanged();
             } else if (this._terrainMode.value === TerrainMode.ElevationMode) {
                 this._brushControl.displayShapeSettings(false);
                 this._onElevationModeChanged();
             }
-            this._brushControl.updateBrushShapes(terrainSettings.brushShapes);
             this._brushControl.session.extensionContext.brushShapeManager.setTerrainStrength(this._terrainMode.value === TerrainMode.FlattenMode ? this._flattenIntensity.value : this._terrainMode.value === TerrainMode.ElevationMode ? this._elevationIntensity.value : this._smoothRoughIntensity.value);
             this._updatePropertyVisibilities();
             this._toolPane.show();
             this._saveSettings();
         }
         _onFlattenModeChanged() {
+            if (!this._isActive || !this._brushControl.isActive) {
+                return;
+            }
             const flattenSettings = this._flattenDefaults.SETTINGS_MAP[this._flattenMode.value];
-            this._brushControl.session.extensionContext.brushShapeManager.setBrushShapeOffset(flattenSettings.brushOffset);
+            this._handleBrushSettingsChange();
             this._cursorControl.forceTargetMode(flattenSettings.targetMode);
             this._session.extensionContext.brushShapeManager.setFlattenSmoothing(this._flattenSmoothing.value);
             this._session.extensionContext.brushShapeManager.setFloorBlockOverride(this._floorBlockOverride.value);
@@ -26135,6 +26475,91 @@ var __webpack_exports__ = {};
                 return;
             }
             this._session.log.error("Fail to save settings for Terrain");
+        }
+        _handleBrushSettingsChange() {
+            if (this._terrainMode.value === TerrainMode.FlattenMode) {
+                const flattenSettings = this._flattenDefaults.SETTINGS_MAP[this._flattenMode.value];
+                const currShape = this._brushControl?.selectedBrushShape ?? this._flattenDefaults.BRUSH_SHAPES[0];
+                let flattenOffset = {
+                    ...flattenSettings.brushOffset
+                };
+                const brushHeight = currShape?.getSettings()?.height ?? this._flattenDefaults.DEFAULT_FLATTEN_BRUSH_HEIGHT;
+                if (currShape instanceof server_editor_namespaceObject.CuboidBrushShape) {
+                    switch (this._flattenMode.value) {
+                      case server_editor_namespaceObject.FlattenMode.Both:
+                        if (flattenOffset.y !== 0) {
+                            flattenOffset = {
+                                x: 0,
+                                y: 0,
+                                z: 0
+                            };
+                        }
+                        break;
+
+                      case server_editor_namespaceObject.FlattenMode.Up:
+                        if (flattenOffset.y !== -brushHeight / 2) {
+                            flattenOffset = {
+                                x: 0,
+                                y: -brushHeight / 2,
+                                z: 0
+                            };
+                        }
+                        break;
+
+                      case server_editor_namespaceObject.FlattenMode.Down:
+                        if (flattenOffset.y !== brushHeight / 2) {
+                            flattenOffset = {
+                                x: 0,
+                                y: brushHeight / 2,
+                                z: 0
+                            };
+                        }
+                        break;
+
+                      default:
+                        break;
+                    }
+                } else if (currShape instanceof server_editor_namespaceObject.CylinderBrushShape) {
+                    switch (this._flattenMode.value) {
+                      case server_editor_namespaceObject.FlattenMode.Both:
+                        if (flattenOffset.y !== -brushHeight / 2) {
+                            flattenOffset = {
+                                x: 0,
+                                y: -brushHeight / 2,
+                                z: 0
+                            };
+                        }
+                        break;
+
+                      case server_editor_namespaceObject.FlattenMode.Up:
+                        if (flattenOffset.y !== -brushHeight) {
+                            flattenOffset = {
+                                x: 0,
+                                y: -brushHeight,
+                                z: 0
+                            };
+                        }
+                        break;
+
+                      case server_editor_namespaceObject.FlattenMode.Down:
+                        if (flattenOffset.y !== 1) {
+                            flattenOffset = {
+                                x: 0,
+                                y: 1,
+                                z: 0
+                            };
+                        }
+                        break;
+
+                      default:
+                        break;
+                    }
+                }
+                if (this._isActive && this._brushControl.isActive) {
+                    this._brushControl.session.extensionContext.brushShapeManager.setBrushShapeOffset(flattenOffset);
+                    this._flattenDefaults.SETTINGS_MAP[this._flattenMode.value].brushOffset = flattenOffset;
+                }
+            }
         }
         teardown() {
             this._deactivateControls();
@@ -29061,6 +29486,13 @@ var __webpack_exports__ = {};
                     this.rootPane.show();
                 }
             });
+            this.session.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, showSettingsPaneAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:settingsPane",
+                label: "resourcePack.editor.settingsPane.keyBinding.label",
+                tooltip: "resourcePack.editor.settingsPane.keyBinding.tooltip"
+            });
             _parentMenu.addItem({
                 label: "resourcePack.editor.settingsPane.menu.title",
                 tooltip: "resourcePack.editor.settingsPane.menu.tooltip"
@@ -29994,7 +30426,7 @@ var __webpack_exports__ = {};
             });
             this._text.forEach(((value, key) => {
                 textSubPane.addString(value, {
-                    title: key,
+                    title: key.toString(),
                     enable: true,
                     onChange: newValue => {
                         this._component?.setText(newValue, key);
@@ -31666,6 +32098,19 @@ var __webpack_exports__ = {};
             this._currentSlots = [];
             const player = _uiSession.extensionContext.player;
             this._telemetryManager = new TelemetryManager(player, TelemetrySource.RealmsUpload);
+            this._panelAction = this._uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                onExecute: () => {
+                    this._activateRealmsUploadPane();
+                }
+            });
+            this._uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, this._panelAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:realmsUpload",
+                label: "resourcePack.editor.realmsPublish.keyBinding.label",
+                tooltip: "resourcePack.editor.realmsPublish.keyBinding.tooltip"
+            });
             this._skipUserUploadConfirmation = (0, server_editor_namespaceObject.makeObservable)(false);
             this._uploadStatusMessage = (0, server_editor_namespaceObject.makeObservable)("");
             this._unauthorizedPaneMessage = (0, server_editor_namespaceObject.makeObservable)("");
@@ -31707,12 +32152,7 @@ var __webpack_exports__ = {};
             menu.addItem({
                 label: "resourcePack.editor.menuBar.file.realmsPublish",
                 tooltip: "resourcePack.editor.menuBar.file.realmsPublish.tooltip"
-            }, this._uiSession?.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._activateRealmsUploadPane();
-                }
-            }));
+            }, this._panelAction);
         }
         _activateRealmsUploadPane() {
             this._rootPropertyPane.show();
@@ -31722,13 +32162,7 @@ var __webpack_exports__ = {};
             this._telemetryManager.fireTelemetryEvent(RealmsTelemetry.RealmUploadPaneOpened);
         }
         _addActionBarItem() {
-            const showExportPaneAction = this._uiSession.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._activateRealmsUploadPane();
-                }
-            });
-            this._uiSession.actionBar.registerItem(server_editor_namespaceObject.CoreActionBarItemType.Realms, showExportPaneAction, {
+            this._uiSession.actionBar.registerItem(server_editor_namespaceObject.CoreActionBarItemType.Realms, this._panelAction, {
                 label: "resourcePack.editor.menuBar.file.realmsPublish",
                 icon: "pack://textures/editor/Realms.png",
                 iconAnimation: {
@@ -34040,8 +34474,8 @@ var __webpack_exports__ = {};
                     }
                 }
             }));
-            this._newTemplateDialog = new ModalDialogStringInput(this._uiSession, this._rootPropertyPane, (name => this._validateTemplateName(name)));
-            this._newRegistryDialog = new ModalDialogStringInput(this._uiSession, this._rootPropertyPane, (name => this._validateRegistryName(name)));
+            this._newTemplateDialog = new ModalDialogStringInput(this._uiSession, this._rootPropertyPane, (name => this._validateTemplateName(name.toLowerCase())));
+            this._newRegistryDialog = new ModalDialogStringInput(this._uiSession, this._rootPropertyPane, (name => this._validateRegistryName(name.toLowerCase())));
             this._modalCollectionDeleteOverlay = this._rootPropertyPane.createModalOverlayPane();
             this._modalCollectionDeleteOverlay.contentPane.addText("resourcePack.editor.jigsaw.pane.registryDeletion.confirmation", {
                 border: false,
@@ -34051,7 +34485,7 @@ var __webpack_exports__ = {};
                 this._modalCollectionDeleteOverlay.hide();
                 this.handleRegistryDeleteRequest();
             }), {
-                title: "resourcePack.editor.selectionTool.quickAction.deleteSelection",
+                title: "resourcePack.editor.jigsaw.pane.registryDeletion.deleteCollection",
                 variant: server_editor_namespaceObject.ButtonVariant.Destructive
             });
             this._modalCollectionDeleteOverlay.controlPane.addButton((() => {
@@ -34077,6 +34511,23 @@ var __webpack_exports__ = {};
             this.cursorProperties.targetMode = server_editor_namespaceObject.CursorTargetMode.Block;
             this.cursorProperties.projectThroughLiquid = false;
             this.cursorProperties.visible = true;
+            this._uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, this._uiSession?.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                onExecute: () => {
+                    this.telemetryManager.fireTelemetryEvent(JigsawTelemetry.JigsawPaneOpened, {
+                        source: "shortcut",
+                        registryCount: this._regNameList.length,
+                        activeRegistry: this.currentRegistryName
+                    });
+                    this._rootPropertyPane.show();
+                }
+            }), {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:jigsawPane",
+                label: "resourcePack.editor.jigsaw.keyBinding.label",
+                tooltip: "resourcePack.editor.jigsaw.keyBinding.tooltip"
+            });
             this._uiSession.actionBar.registerItem("editor:actionBarItem:jigsawManager", this.openMenuAction, {
                 label: "resourcePack.editor.jigsaw.actionBar.title",
                 icon: "pack://textures/editor/Jigsaw-Large.png",
@@ -37149,7 +37600,7 @@ var __webpack_exports__ = {};
             }), {
                 key: server_editor_namespaceObject.KeyboardKey.KEY_D,
                 modifier: server_editor_namespaceObject.InputModifier.Control
-            }, "deselectAll");
+            }, "deselect");
             this.registerToolKeyBinding(this._session.actionManager.createAction({
                 actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
                 onExecute: () => {
@@ -37210,14 +37661,14 @@ var __webpack_exports__ = {};
                 entries: [ {
                     value: PrefabInstanceEditorState.Picker,
                     label: {
-                        id: "editor.prefabInstanceEditor.state.picker"
+                        id: "editor.prefabInstanceEditor.templatePicker.tool.quickAction.pickMode"
                     },
                     icon: "objectSelectIcon",
                     tooltip: "editor.prefabInstanceEditor.infoPanel.picker.tooltip"
                 }, {
                     value: PrefabInstanceEditorState.Placer,
                     label: {
-                        id: "editor.prefabInstanceEditor.state.placer"
+                        id: "editor.prefabInstanceEditor.templatePicker.tool.quickAction.placeMode"
                     },
                     icon: "editIcon",
                     tooltip: "editor.prefabInstanceEditor.templatePicker.tool.quickAction.placeMode.tooltip"
@@ -37404,6 +37855,13 @@ var __webpack_exports__ = {};
                 onExecute: () => {
                     this._pane.show();
                 }
+            });
+            this._uiSession.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, showPaneAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:chunkManagementPanel",
+                label: "resourcePack.editor.chunkManagement.keyBinding.label",
+                tooltip: "resourcePack.editor.chunkManagement.keyBinding.tooltip"
             });
             this._uiSession.actionBar.registerItem("editor:actionBarItem:chunkManagement", showPaneAction, {
                 label: "resourcePack.editor.chunkManagement.title",
@@ -39891,6 +40349,12 @@ var __webpack_exports__ = {};
             this._session = session;
             this._tickHandle = -1;
             this._asyncOperationWorking = false;
+            const showPanelAction = this._session.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                onExecute: () => {
+                    this._rootPane.show();
+                }
+            });
             this.telemetryManager = new TelemetryManager(session.extensionContext.player, TelemetrySource.DeferredLighting);
             this._schemaInterface = new logInterface;
             this._schemaInterface._debug = _msg => {};
@@ -40222,7 +40686,7 @@ var __webpack_exports__ = {};
                             this._collectionIdentifiers = data.identifiers;
                             this._collectionNamespaces.length = 0;
                             this._collectionIdentifiersElement.enable = true;
-                            this._newSettingButton.enable = true;
+                            this._newSettingButton.enable = !this._isAccessorGlobalConfiguration(this._currentAccessor);
                             for (const identifier of this._collectionIdentifiers) {
                                 const charIndex = identifier.indexOf(":");
                                 const str = identifier.substring(0, charIndex);
@@ -40398,16 +40862,25 @@ var __webpack_exports__ = {};
                     label: "resourcePack.editor.menuBar.vibrantVisuals.title",
                     uniqueId: "DeferredLightingSettingsMenuItem",
                     tooltip: "resourcePack.editor.menuBar.vibrantVisualsBiome.tooltip"
-                }, this._session.actionManager.createAction({
-                    actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                    onExecute: () => {
-                        this._rootPane.show();
-                    }
-                }));
+                }, showPanelAction);
             })).catch((() => {
                 this._logError("Failed to add root menu item for this tool");
             }));
-            this._addActionBarItem();
+            this._session.inputManager.registerKeyBinding(server_editor_namespaceObject.EditorInputContext.GlobalToolMode, showPanelAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UNDEFINED
+            }, {
+                uniqueId: "editor:toolModeKeyBinding:vibrantVisualsPanel",
+                label: "editor.vibrantVisuals.chunkManagement.keyBinding.label",
+                tooltip: "editor.vibrantVisuals.chunkManagement.keyBinding.tooltip"
+            });
+            this._session.actionBar.registerItem("editor:actionBarItem:vibrantVisualsBiome", showPanelAction, {
+                label: "resourcePack.editor.menuBar.vibrantVisuals.title",
+                icon: "pack://textures/editor/Vibrant-Visuals.png?filtering=point",
+                tooltipTitle: "resourcePack.editor.menuBar.vibrantVisuals.title",
+                tooltipDescription: "resourcePack.editor.menuBar.vibrantVisualsBiome.tooltip",
+                enabled: true,
+                executeOnAdd: true
+            });
         }
         _fetchAndApplyBiomeConfig(biomeId) {
             this._transferManager.requestBiomeConfig(biomeId).then((val => {
@@ -40508,7 +40981,7 @@ var __webpack_exports__ = {};
         }
         _processCollectionChanges(_accessorName) {
             this._collectionIdentifiersElement.enable = true;
-            this._newSettingButton.enable = true;
+            this._newSettingButton.enable = !this._isAccessorGlobalConfiguration(_accessorName);
             for (const identifier of this._collectionIdentifiers) {
                 const namespace = this._getNamespace(identifier);
                 if (!this._collectionNamespaces.includes(namespace)) {
@@ -40696,22 +41169,6 @@ var __webpack_exports__ = {};
                 }), 1);
             }
         }
-        _addActionBarItem() {
-            const showVibrantVisualsPaneAction = this._session.actionManager.createAction({
-                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
-                onExecute: () => {
-                    this._rootPane.show();
-                }
-            });
-            this._session.actionBar.registerItem("editor:actionBarItem:vibrantVisualsBiome", showVibrantVisualsPaneAction, {
-                label: "resourcePack.editor.menuBar.vibrantVisuals.title",
-                icon: "pack://textures/editor/Vibrant-Visuals.png?filtering=point",
-                tooltipTitle: "resourcePack.editor.menuBar.vibrantVisuals.title",
-                tooltipDescription: "resourcePack.editor.menuBar.vibrantVisualsBiome.tooltip",
-                enabled: true,
-                executeOnAdd: true
-            });
-        }
         _getNamespace(fullIdentifier) {
             const charIndex = fullIdentifier.indexOf(":");
             const str = fullIdentifier.substring(0, charIndex);
@@ -40719,7 +41176,7 @@ var __webpack_exports__ = {};
         }
         _changeBiomeMapping() {
             const currentBiome = this._targetBiomeDropdownList[this._targetBiomeDropdownIndex.value].id;
-            if (this._biomeConfigData && this._currentAccessor && this._currentIdentifier) {
+            if (this._biomeConfigData && this._currentAccessor && this._currentIdentifier && !this._isAccessorGlobalConfiguration(this._currentAccessor)) {
                 this._transferManager.changeBiomeMapping(currentBiome, this._currentAccessor, this._currentIdentifier);
                 const accessorString = this._currentAccessor.replace("deferred_lighting::", "");
                 const accessorToConfigKeyMap = {
@@ -40733,6 +41190,8 @@ var __webpack_exports__ = {};
                 if (configKey && configKey in this._biomeConfigData) {
                     this._biomeConfigData[configKey] = this._currentIdentifier;
                 }
+            } else {
+                this._schemaInterface.error("Failed to change biome mapping - attempting to change biome mapping for a global configuration or missing necessary data");
             }
         }
         _buildBiomeJSON(currentBiome, biomeConfigData) {
@@ -42635,6 +43094,1171 @@ var __webpack_exports__ = {};
         }
     }
     CinematicToolBehavior.BEHAVIOR_NAME = "Cinematic Tool";
+    var PrimitivesToolTelemetry;
+    (function(PrimitivesToolTelemetry) {
+        PrimitivesToolTelemetry["PlacementModeChanged"] = "PlacementModeChanged";
+        PrimitivesToolTelemetry["PlacementAttempted"] = "PlacementAttempted";
+        PrimitivesToolTelemetry["PlacementOutcome"] = "PlacementOutcome";
+    })(PrimitivesToolTelemetry || (PrimitivesToolTelemetry = {}));
+    var PrimitivesCommitSource;
+    (function(PrimitivesCommitSource) {
+        PrimitivesCommitSource["EnterKey"] = "enter_key";
+        PrimitivesCommitSource["PlaceButton"] = "place_button";
+    })(PrimitivesCommitSource || (PrimitivesCommitSource = {}));
+    var PrimitivesModeChangeTrigger;
+    (function(PrimitivesModeChangeTrigger) {
+        PrimitivesModeChangeTrigger["PrimaryClick"] = "primary_click";
+        PrimitivesModeChangeTrigger["ViewCenterAnchor"] = "view_center_anchor";
+        PrimitivesModeChangeTrigger["EscapeDeleteCancel"] = "escape_delete_cancel";
+        PrimitivesModeChangeTrigger["DeactivateReset"] = "deactivate_reset";
+        PrimitivesModeChangeTrigger["TeardownReset"] = "teardown_reset";
+    })(PrimitivesModeChangeTrigger || (PrimitivesModeChangeTrigger = {}));
+    var PrimitivesPlacementOutcome;
+    (function(PrimitivesPlacementOutcome) {
+        PrimitivesPlacementOutcome["Success"] = "success";
+        PrimitivesPlacementOutcome["Cancelled"] = "cancelled";
+        PrimitivesPlacementOutcome["Failed"] = "failed";
+    })(PrimitivesPlacementOutcome || (PrimitivesPlacementOutcome = {}));
+    var PrimitivesPlacementOutcomeReason;
+    (function(PrimitivesPlacementOutcomeReason) {
+        PrimitivesPlacementOutcomeReason["UserCancelDialog"] = "user_cancel_dialog";
+        PrimitivesPlacementOutcomeReason["GenerationCancelled"] = "generation_cancelled";
+        PrimitivesPlacementOutcomeReason["GenerationError"] = "generation_error";
+        PrimitivesPlacementOutcomeReason["PlacementError"] = "placement_error";
+        PrimitivesPlacementOutcomeReason["MaxBlockLimitExceeded"] = "max_block_limit_exceeded";
+        PrimitivesPlacementOutcomeReason["SystemNotReady"] = "system_not_ready";
+        PrimitivesPlacementOutcomeReason["ToolDeactivated"] = "tool_deactivated";
+        PrimitivesPlacementOutcomeReason["None"] = "none";
+    })(PrimitivesPlacementOutcomeReason || (PrimitivesPlacementOutcomeReason = {}));
+    var PrimitivesPlacementOutcomePhase;
+    (function(PrimitivesPlacementOutcomePhase) {
+        PrimitivesPlacementOutcomePhase["Validation"] = "validation";
+        PrimitivesPlacementOutcomePhase["Generation"] = "generation";
+        PrimitivesPlacementOutcomePhase["Placement"] = "placement";
+    })(PrimitivesPlacementOutcomePhase || (PrimitivesPlacementOutcomePhase = {}));
+    function isUserInitiatedModeTrigger(trigger) {
+        return trigger === PrimitivesModeChangeTrigger.PrimaryClick || trigger === PrimitivesModeChangeTrigger.EscapeDeleteCancel;
+    }
+    var ShapePlacementMode;
+    (function(ShapePlacementMode) {
+        ShapePlacementMode[ShapePlacementMode["Cursor"] = 1] = "Cursor";
+        ShapePlacementMode[ShapePlacementMode["Anchored"] = 2] = "Anchored";
+    })(ShapePlacementMode || (ShapePlacementMode = {}));
+    function getRotationFromSettings(settings) {
+        return {
+            x: settings?.xRotation ?? 0,
+            y: settings?.yRotation ?? 0,
+            z: settings?.zRotation ?? 0
+        };
+    }
+    function hasEffectiveRotation(rotation) {
+        const normalizeRotation = degrees => (degrees % 360 + 360) % 360;
+        return normalizeRotation(rotation.x) !== 0 || normalizeRotation(rotation.y) !== 0 || normalizeRotation(rotation.z) !== 0;
+    }
+    function getPreviewRotationFromSettings(settings) {
+        const rotation = getRotationFromSettings(settings);
+        if (!hasEffectiveRotation(rotation)) {
+            return rotation;
+        }
+        return convertGenerationRotationToWidgetRotation(rotation);
+    }
+    function getBaseAnchoredCenterY(height, isRotated) {
+        if (!isRotated) {
+            return height / 2;
+        }
+        const boundingHeight = Math.max(0, height - 1);
+        return boundingHeight % 2 === 0 ? boundingHeight / 2 : boundingHeight / 2 + .5;
+    }
+    function getDimensionsFromSettings(shape) {
+        if (shape instanceof server_editor_namespaceObject.CuboidBrushShape) {
+            const settings = shape.getSettings();
+            return {
+                width: settings.width,
+                height: settings.height,
+                depth: settings.depth
+            };
+        } else if (shape instanceof server_editor_namespaceObject.EllipsoidBrushShape) {
+            const settings = shape.getSettings();
+            return {
+                width: 2 * settings.width - 1,
+                height: 2 * settings.height - 1,
+                depth: 2 * settings.depth - 1
+            };
+        } else if (shape instanceof server_editor_namespaceObject.CylinderBrushShape) {
+            const settings = shape.getSettings();
+            return {
+                width: 2 * settings.width - 1,
+                height: settings.height,
+                depth: 2 * settings.depth - 1
+            };
+        } else if (shape instanceof server_editor_namespaceObject.ConeBrushShape) {
+            const settings = shape.getSettings();
+            return {
+                width: 2 * settings.width - 1,
+                height: settings.height,
+                depth: 2 * settings.depth - 1
+            };
+        } else if (shape instanceof server_editor_namespaceObject.PyramidBrushShape) {
+            const settings = shape.getSettings();
+            return {
+                width: 2 * Math.ceil(settings.width / 2) - 1,
+                height: settings.height,
+                depth: 2 * Math.ceil(settings.depth / 2) - 1
+            };
+        }
+        return {
+            width: 4,
+            height: 4,
+            depth: 4
+        };
+    }
+    class PrimitivesToolBehavior {
+        constructor(uiSession) {
+            this.uiSession = uiSession;
+            this.placementProgressMessage = (0, server_editor_namespaceObject.makeObservable)("");
+            this.placementProgressValue = (0, server_editor_namespaceObject.makeObservable)(0);
+            this.isPlacingShape = false;
+            this.placementWasCommitted = false;
+            this.placementMode = ShapePlacementMode.Cursor;
+            this.needsPositionUpdate = false;
+            this.needsShapeUpdate = false;
+            this.propertyPane = uiSession.createPropertyPane({
+                title: "resourcePack.editor.toolRail.primitiveTool.title",
+                infoTooltip: {
+                    description: [ "resourcePack.editor.toolRail.primitiveTool.description", {
+                        link: "https://aka.ms/BedrockEditorShapeTool",
+                        text: "resourcePack.editor.help.learnMore"
+                    } ]
+                }
+            });
+            this.tool = uiSession.toolRail.addTool("editor:modalTool:shape", {
+                title: "resourcePack.editor.toolRail.primitiveTool.title",
+                icon: "pack://textures/editor/Shapes.png?filtering=point",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.tooltipDescription"
+            });
+            this.telemetryManager = new TelemetryManager(uiSession.extensionContext.player, TelemetrySource.Primitives);
+            this.brushShapes = [ new server_editor_namespaceObject.CuboidBrushShape({
+                width: 10,
+                height: 10,
+                depth: 10,
+                minLength: 1,
+                maxLength: 58
+            }), new server_editor_namespaceObject.EllipsoidBrushShape({
+                width: 10,
+                height: 10,
+                depth: 10,
+                minRadius: 1,
+                maxRadius: 60
+            }), new server_editor_namespaceObject.CylinderBrushShape({
+                radius: 5,
+                height: 10,
+                minRadius: 1,
+                maxRadius: 60,
+                maxHeight: 60
+            }), new server_editor_namespaceObject.ConeBrushShape({
+                radius: 5,
+                height: 10,
+                maxRadius: 60,
+                maxHeight: 60
+            }), new server_editor_namespaceObject.PyramidBrushShape({
+                width: 10,
+                height: 10,
+                depth: 10,
+                maxSide: 60,
+                maxHeight: 60
+            }) ];
+            this.cursorModeControl = new CursorModeControl(uiSession, this.tool, this.propertyPane, false, {
+                visible: false,
+                controlMode: server_editor_namespaceObject.CursorControlMode.KeyboardAndMouse,
+                targetMode: server_editor_namespaceObject.CursorTargetMode.Face
+            }, {
+                hasPaneMargins: true,
+                enableBrushShapeOffsetControl: true,
+                onOffsetChange: () => {
+                    this.handleOffsetChange();
+                }
+            });
+            this.cursorModeControl.initialize();
+            this.widgetGroup = uiSession.extensionContext.widgetManager.createGroup({
+                groupSelectionMode: server_editor_namespaceObject.WidgetGroupSelectionMode.None,
+                visible: true
+            });
+            this.constructUI();
+            this.createPlacementDialog();
+            this.registerKeyBindings();
+            this.tool.onModalToolActivation.subscribe((eventData => {
+                if (eventData.isActiveTool) {
+                    this.onActivate();
+                } else {
+                    this.onDeactivate();
+                }
+            }));
+            this.tool.bindPropertyPane(this.propertyPane);
+        }
+        registerKeyBindings() {
+            const commitPlacementAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                onExecute: () => {
+                    this.commitPlacement(PrimitivesCommitSource.EnterKey);
+                }
+            });
+            this.tool.registerKeyBinding(commitPlacementAction, {
+                key: server_editor_namespaceObject.KeyboardKey.ENTER
+            }, {
+                uniqueId: "editor:primitiveTool:commitPlacement",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.placePrimitive.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.placePrimitive.tooltip"
+            });
+            const cancelPlacementAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.NoArgsAction,
+                onExecute: () => {
+                    if (this.isAnchoredMode()) {
+                        this.transitionToCursorMode(PrimitivesModeChangeTrigger.EscapeDeleteCancel);
+                    }
+                }
+            });
+            this.tool.registerKeyBinding(cancelPlacementAction, {
+                key: server_editor_namespaceObject.KeyboardKey.ESCAPE
+            }, {
+                uniqueId: "editor:primitiveTool:cancelPlacementEscape",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.cancelPlacement.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.cancelPlacement.tooltip"
+            });
+            this.tool.registerKeyBinding(cancelPlacementAction, {
+                key: server_editor_namespaceObject.KeyboardKey.DELETE
+            }, {
+                uniqueId: "editor:primitiveTool:cancelPlacementDelete",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.cancelPlacement.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.cancelPlacement.tooltip"
+            });
+            const nudgeUpAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.ContinuousAction,
+                onExecute: state => {
+                    if (state !== server_editor_namespaceObject.ContinuousActionState.End) {
+                        this.nudgeAnchor(lib.VECTOR3_UP);
+                    }
+                },
+                repeatDelay: PrimitivesToolBehavior.NUDGE_REPEAT_DELAY,
+                repeatInterval: PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL
+            });
+            const nudgeDownAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.ContinuousAction,
+                onExecute: state => {
+                    if (state !== server_editor_namespaceObject.ContinuousActionState.End) {
+                        this.nudgeAnchor(lib.VECTOR3_DOWN);
+                    }
+                },
+                repeatDelay: PrimitivesToolBehavior.NUDGE_REPEAT_DELAY,
+                repeatInterval: PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL
+            });
+            const nudgeForwardAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.ContinuousAction,
+                onExecute: state => {
+                    if (state !== server_editor_namespaceObject.ContinuousActionState.End) {
+                        this.nudgeAnchor(this.getRelativeNudgeDirection(direction_Direction.Forward));
+                    }
+                },
+                repeatDelay: PrimitivesToolBehavior.NUDGE_REPEAT_DELAY,
+                repeatInterval: PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL
+            });
+            const nudgeBackAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.ContinuousAction,
+                onExecute: state => {
+                    if (state !== server_editor_namespaceObject.ContinuousActionState.End) {
+                        this.nudgeAnchor(this.getRelativeNudgeDirection(direction_Direction.Back));
+                    }
+                },
+                repeatDelay: PrimitivesToolBehavior.NUDGE_REPEAT_DELAY,
+                repeatInterval: PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL
+            });
+            const nudgeLeftAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.ContinuousAction,
+                onExecute: state => {
+                    if (state !== server_editor_namespaceObject.ContinuousActionState.End) {
+                        this.nudgeAnchor(this.getRelativeNudgeDirection(direction_Direction.Left));
+                    }
+                },
+                repeatDelay: PrimitivesToolBehavior.NUDGE_REPEAT_DELAY,
+                repeatInterval: PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL
+            });
+            const nudgeRightAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.ContinuousAction,
+                onExecute: state => {
+                    if (state !== server_editor_namespaceObject.ContinuousActionState.End) {
+                        this.nudgeAnchor(this.getRelativeNudgeDirection(direction_Direction.Right));
+                    }
+                },
+                repeatDelay: PrimitivesToolBehavior.NUDGE_REPEAT_DELAY,
+                repeatInterval: PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL
+            });
+            this.tool.registerKeyBinding(nudgeUpAction, {
+                key: server_editor_namespaceObject.KeyboardKey.PAGE_UP
+            }, {
+                uniqueId: "editor:primitiveTool:nudgeUp",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeUp.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeUp.tooltip"
+            });
+            this.tool.registerKeyBinding(nudgeDownAction, {
+                key: server_editor_namespaceObject.KeyboardKey.PAGE_DOWN
+            }, {
+                uniqueId: "editor:primitiveTool:nudgeDown",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeDown.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeDown.tooltip"
+            });
+            this.tool.registerKeyBinding(nudgeForwardAction, {
+                key: server_editor_namespaceObject.KeyboardKey.UP
+            }, {
+                uniqueId: "editor:primitiveTool:nudgeForward",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeForward.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeForward.tooltip"
+            });
+            this.tool.registerKeyBinding(nudgeBackAction, {
+                key: server_editor_namespaceObject.KeyboardKey.DOWN
+            }, {
+                uniqueId: "editor:primitiveTool:nudgeBack",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeBack.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeBack.tooltip"
+            });
+            this.tool.registerKeyBinding(nudgeLeftAction, {
+                key: server_editor_namespaceObject.KeyboardKey.LEFT
+            }, {
+                uniqueId: "editor:primitiveTool:nudgeLeft",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeLeft.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeLeft.tooltip"
+            });
+            this.tool.registerKeyBinding(nudgeRightAction, {
+                key: server_editor_namespaceObject.KeyboardKey.RIGHT
+            }, {
+                uniqueId: "editor:primitiveTool:nudgeRight",
+                label: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeRight.title",
+                tooltip: "resourcePack.editor.toolRail.primitiveTool.keyBinding.nudgeRight.tooltip"
+            });
+            const placeShapeMouseAction = this.uiSession.actionManager.createAction({
+                actionType: server_editor_namespaceObject.ActionTypes.MouseRayCastAction,
+                onExecute: (_unusedMouseRay, mouseProps) => {
+                    if (mouseProps.mouseAction === server_editor_namespaceObject.MouseActionType.LeftButton && mouseProps.inputType === server_editor_namespaceObject.MouseInputType.ButtonDown) {
+                        this.handlePrimaryClick();
+                    }
+                }
+            });
+            this.tool.registerMouseButtonBinding(placeShapeMouseAction);
+        }
+        constructUI() {
+            this.brushPaintControl = new BrushPaintSharedControl(this.uiSession, this.tool, this.propertyPane, {
+                paintMode: server_editor_namespaceObject.PaintMode.BlockPaint
+            }, this.brushShapes, {
+                hasPaneMargins: true,
+                hideOffset: true,
+                flatShapeSettings: true,
+                locOverride: new Map([ [ BrushPaintControlStringKeys.RootPaneTitle, "resourcePack.editor.toolRail.primitiveTool.settings.shape" ], [ BrushPaintControlStringKeys.RootPaneTooltip, "" ], [ BrushPaintControlStringKeys.BrushShapeSelectionTitle, "resourcePack.editor.toolRail.primitiveTool.settings.shape" ], [ BrushPaintControlStringKeys.BrushShapeSelectionTooltip, "resourcePack.editor.toolRail.primitiveTool.settings.shape.tooltip" ], [ BrushPaintControlStringKeys.BrushShapeSettingsTitle, "" ], [ BrushPaintControlStringKeys.BrushShapeSettingsTooltip, "" ], [ BrushPaintControlStringKeys.FillConstraintsTitle, "resourcePack.editor.toolRail.primitiveTool.settings.blockFilters" ], [ BrushPaintControlStringKeys.FillConstraintsTooltip, "resourcePack.editor.toolRail.primitiveTool.settings.blockFilters.tooltip" ], [ BrushPaintControlStringKeys.MaskModeTitle, "resourcePack.editor.toolRail.primitiveTool.settings.blockFilterMode" ], [ BrushPaintControlStringKeys.MaskModeTooltip, "" ] ]),
+                maxBlockVolume: PrimitivesToolBehavior.MAX_TOTAL_BLOCKS,
+                onShapeChange: () => {
+                    this.handleShapeOrSettingsChange();
+                },
+                onSettingsChange: () => {
+                    this.handleShapeOrSettingsChange();
+                },
+                onOffsetChange: () => {
+                    this.handleOffsetChange();
+                },
+                onVolumeClamped: (clampedBlockCount, maxBlockVolume) => {
+                    this.uiSession.log.debug(`Shape dimensions clamped to ~${clampedBlockCount.toLocaleString()} blocks to stay within ${maxBlockVolume.toLocaleString()} block limit`);
+                },
+                shouldSkipBrushVolumeUpdate: () => true,
+                disableNudgeBindings: true
+            });
+            this.brushPaintControl.initialize();
+            this.propertyPane.addButton((() => {
+                this.commitPlacement(PrimitivesCommitSource.PlaceButton);
+            }), {
+                title: "resourcePack.editor.toolRail.primitiveTool.settings.placeFill"
+            });
+        }
+        handleShapeOrSettingsChange() {
+            this.needsShapeUpdate = true;
+        }
+        handleOffsetChange() {
+            if (this.isAnchoredMode()) {
+                this.recomputeAnchorWorld();
+            } else {
+                this.needsPositionUpdate = true;
+            }
+        }
+        getRelativeNudgeDirection(direction) {
+            const rotationY = this.uiSession.extensionContext.player.getRotation().y;
+            return getRotationCorrectedDirectionVector(rotationY, direction);
+        }
+        nudgeAnchor(nudgeVector) {
+            if (this.isPlacingShape) {
+                return;
+            }
+            if (!this.isAnchoredMode()) {
+                this.anchorToViewCenter();
+            }
+            if (!this.anchorBase) {
+                return;
+            }
+            this.anchorBase = {
+                x: this.anchorBase.x + nudgeVector.x,
+                y: this.anchorBase.y + nudgeVector.y,
+                z: this.anchorBase.z + nudgeVector.z
+            };
+            this.recomputeAnchorWorld();
+        }
+        getSelectedShape() {
+            return this.brushPaintControl?.selectedBrushShape ?? this.brushShapes[0];
+        }
+        getShapeOffset() {
+            return this.uiSession.extensionContext.brushShapeManager.getBrushShapeOffset();
+        }
+        estimateBlockCount() {
+            const selectedShape = this.getSelectedShape();
+            return selectedShape.estimateBlockCount();
+        }
+        isAnchoredMode() {
+            return this.placementMode === ShapePlacementMode.Anchored;
+        }
+        getPlacementModeName(mode = this.placementMode) {
+            return mode === ShapePlacementMode.Anchored ? "Anchored" : "Cursor";
+        }
+        getPlacementTelemetryContext(selectedShape, rotation, blockCount) {
+            const dimensions = getDimensionsFromSettings(selectedShape);
+            const computationVolume = dimensions.width * dimensions.height * dimensions.depth;
+            return {
+                placementMode: this.getPlacementModeName(),
+                shapeType: selectedShape.id,
+                width: dimensions.width,
+                height: dimensions.height,
+                depth: dimensions.depth,
+                rotationX: rotation.x,
+                rotationY: rotation.y,
+                rotationZ: rotation.z,
+                computationVolume,
+                estimatedBlockCount: blockCount
+            };
+        }
+        firePlacementOutcomeTelemetry(outcome, reason, phase, options) {
+            const context = options?.context ?? this.activePlacementTelemetryContext;
+            if (!context) {
+                this.uiSession.log.debug(`Telemetry outcome dropped due to missing placement context: outcome=${outcome}, reason=${reason}, phase=${phase}`);
+                return;
+            }
+            const startTimeMs = options?.startTimeMs ?? this.activePlacementStartTimeMs;
+            const durationMs = startTimeMs !== undefined ? Math.max(0, Date.now() - startTimeMs) : -1;
+            this.telemetryManager.fireTelemetryEvent(PrimitivesToolTelemetry.PlacementOutcome, {
+                ...context,
+                outcome,
+                reason,
+                phase,
+                hadCommittedPlacementToUndo: options?.hadCommittedPlacementToUndo ?? this.placementWasCommitted,
+                durationMs
+            });
+        }
+        getPrimitiveCenterForShape(selectedShape, dimensions, rotation) {
+            const {width, height, depth} = dimensions;
+            const isRotated = hasEffectiveRotation(rotation);
+            const oddX = width % 2 * .5;
+            const oddZ = depth % 2 * .5;
+            if (selectedShape instanceof server_editor_namespaceObject.CuboidBrushShape || selectedShape instanceof server_editor_namespaceObject.EllipsoidBrushShape) {
+                const oddY = height % 2 * .5;
+                return {
+                    x: oddX,
+                    y: oddY,
+                    z: oddZ
+                };
+            }
+            if (selectedShape instanceof server_editor_namespaceObject.CylinderBrushShape || selectedShape instanceof server_editor_namespaceObject.ConeBrushShape || selectedShape instanceof server_editor_namespaceObject.PyramidBrushShape) {
+                return {
+                    x: oddX,
+                    y: getBaseAnchoredCenterY(height, isRotated),
+                    z: oddZ
+                };
+            }
+            return {
+                x: 0,
+                y: 0,
+                z: 0
+            };
+        }
+        createPrimitiveForCurrentShape() {
+            const selectedShape = this.getSelectedShape();
+            const settings = selectedShape.getSettings();
+            const color = PrimitivesToolBehavior.PRIMITIVE_PREVIEW_COLOR;
+            const rotation = getPreviewRotationFromSettings(settings);
+            const rotationDegrees = getRotationFromSettings(settings);
+            const dimensions = getDimensionsFromSettings(selectedShape);
+            const {width, height, depth} = dimensions;
+            const center = this.getPrimitiveCenterForShape(selectedShape, dimensions, rotationDegrees);
+            if (selectedShape instanceof server_editor_namespaceObject.CuboidBrushShape) {
+                return new server_editor_namespaceObject.WidgetComponentRenderPrimitiveTypeCuboid(center, width, height, depth, color, rotation);
+            } else if (selectedShape instanceof server_editor_namespaceObject.EllipsoidBrushShape) {
+                const radii = {
+                    x: width / 2,
+                    y: height / 2,
+                    z: depth / 2
+                };
+                return new server_editor_namespaceObject.WidgetComponentRenderPrimitiveTypeEllipsoid(center, radii, color, rotation);
+            } else if (selectedShape instanceof server_editor_namespaceObject.CylinderBrushShape) {
+                return new server_editor_namespaceObject.WidgetComponentRenderPrimitiveTypeCylinder(center, width / 2, depth / 2, height, color, rotation);
+            } else if (selectedShape instanceof server_editor_namespaceObject.ConeBrushShape) {
+                return new server_editor_namespaceObject.WidgetComponentRenderPrimitiveTypeCone(center, width / 2, depth / 2, height, color, undefined, rotation);
+            } else if (selectedShape instanceof server_editor_namespaceObject.PyramidBrushShape) {
+                return new server_editor_namespaceObject.WidgetComponentRenderPrimitiveTypePyramid(center, width, height, color, depth, rotation);
+            }
+            return undefined;
+        }
+        ensurePrimitiveComponentExists() {
+            if (!this.widgetGroup) {
+                return;
+            }
+            if (!this.previewWidget) {
+                const widgetPos = this.getPreviewWidgetLocation();
+                this.previewWidget = this.widgetGroup.createWidget(widgetPos, {
+                    visible: true,
+                    collisionType: server_editor_namespaceObject.WidgetCollisionType.None,
+                    snapToBlockLocation: false
+                });
+            }
+            if (!this.primitiveComponent && this.previewWidget) {
+                const primitive = this.createPrimitiveForCurrentShape();
+                if (primitive) {
+                    this.primitiveComponent = this.previewWidget.addRenderPrimitiveComponent(PrimitivesToolBehavior.PRIMITIVE_COMPONENT_NAME, primitive);
+                }
+            }
+        }
+        updatePrimitivePreview() {
+            if (this.brushPaintControl) {
+                this.brushPaintControl.hideVisualization();
+            }
+            this.uiSession.extensionContext.brushShapeManager.setBrushShapeVisible(false);
+            if (!this.primitiveComponent) {
+                this.ensurePrimitiveComponentExists();
+            }
+            if (this.primitiveComponent) {
+                const newPrimitive = this.createPrimitiveForCurrentShape();
+                if (newPrimitive) {
+                    this.primitiveComponent.setPrimitive(newPrimitive);
+                }
+            }
+            this.updateWidgetPosition();
+        }
+        updateWidgetPosition() {
+            if (!this.previewWidget) {
+                return;
+            }
+            this.previewWidget.location = this.getPreviewWidgetLocation();
+            this.updateGizmoLocation();
+        }
+        getPreviewWidgetLocation() {
+            if (this.isAnchoredMode() && this.anchorWorld) {
+                return this.anchorWorld;
+            }
+            const cursorPos = this.uiSession.extensionContext.cursor.getPosition();
+            const offset = this.getShapeOffset();
+            return {
+                x: cursorPos.x + offset.x,
+                y: cursorPos.y + offset.y,
+                z: cursorPos.z + offset.z
+            };
+        }
+        getAnchorCenterWorld() {
+            if (!this.anchorWorld) {
+                return undefined;
+            }
+            const selectedShape = this.getSelectedShape();
+            const rotation = getRotationFromSettings(selectedShape.getSettings());
+            const dimensions = getDimensionsFromSettings(selectedShape);
+            const centerOffset = this.getPrimitiveCenterForShape(selectedShape, dimensions, rotation);
+            return {
+                x: this.anchorWorld.x + centerOffset.x,
+                y: this.anchorWorld.y + centerOffset.y,
+                z: this.anchorWorld.z + centerOffset.z
+            };
+        }
+        updateGizmoLocation() {
+            if (!this.isAnchoredMode() || !this.gizmoWidget) {
+                return;
+            }
+            const centerWorld = this.getAnchorCenterWorld();
+            if (centerWorld) {
+                this.gizmoWidget.location = centerWorld;
+            }
+        }
+        updatePreview() {
+            this.updatePrimitivePreview();
+        }
+        recomputeAnchorWorld() {
+            if (!this.anchorBase) {
+                return;
+            }
+            const offset = this.getShapeOffset();
+            this.anchorWorld = {
+                x: this.anchorBase.x + offset.x,
+                y: this.anchorBase.y + offset.y,
+                z: this.anchorBase.z + offset.z
+            };
+            if (!this.previewWidget) {
+                this.ensurePrimitiveComponentExists();
+            }
+            this.updateWidgetPosition();
+            this.updateGizmoLocation();
+        }
+        transitionToAnchoredMode(clickPosition, trigger) {
+            const previousMode = this.placementMode;
+            this.anchorBase = {
+                x: clickPosition.x,
+                y: clickPosition.y,
+                z: clickPosition.z
+            };
+            this.placementMode = ShapePlacementMode.Anchored;
+            this.recomputeAnchorWorld();
+            this.setupMoveGizmo();
+            if (previousMode !== this.placementMode) {
+                this.telemetryManager.fireTelemetryEvent(PrimitivesToolTelemetry.PlacementModeChanged, {
+                    fromMode: this.getPlacementModeName(previousMode),
+                    toMode: this.getPlacementModeName(this.placementMode),
+                    trigger,
+                    isPlacingShape: this.isPlacingShape,
+                    isUserInitiated: isUserInitiatedModeTrigger(trigger)
+                });
+            }
+        }
+        transitionToCursorMode(trigger) {
+            const previousMode = this.placementMode;
+            this.placementMode = ShapePlacementMode.Cursor;
+            this.anchorBase = undefined;
+            this.anchorWorld = undefined;
+            this.teardownMoveGizmo();
+            this.updateWidgetPosition();
+            if (previousMode !== this.placementMode) {
+                this.telemetryManager.fireTelemetryEvent(PrimitivesToolTelemetry.PlacementModeChanged, {
+                    fromMode: this.getPlacementModeName(previousMode),
+                    toMode: this.getPlacementModeName(this.placementMode),
+                    trigger,
+                    isPlacingShape: this.isPlacingShape,
+                    isUserInitiated: isUserInitiatedModeTrigger(trigger)
+                });
+            }
+        }
+        setupMoveGizmo() {
+            if (!this.widgetGroup || !this.anchorWorld) {
+                return;
+            }
+            if (!this.gizmoWidget) {
+                const centerWorld = this.getAnchorCenterWorld() ?? this.anchorWorld;
+                this.gizmoWidget = this.widgetGroup.createWidget(centerWorld, {
+                    visible: true,
+                    collisionType: server_editor_namespaceObject.WidgetCollisionType.None,
+                    snapToBlockLocation: false
+                });
+                this.moveGizmo = this.gizmoWidget.addGizmoComponent("primitivesToolMoveGizmo", {
+                    axes: server_editor_namespaceObject.Axis.X | server_editor_namespaceObject.Axis.Y | server_editor_namespaceObject.Axis.Z,
+                    enablePlanes: true,
+                    stateChangeEvent: data => {
+                        if (data.eventType === server_editor_namespaceObject.WidgetGizmoEventType.OriginMoved || data.eventType === server_editor_namespaceObject.WidgetGizmoEventType.CornerMoved) {
+                            this.updateAnchorFromGizmo(data.widget.location);
+                        }
+                    }
+                });
+                this.moveGizmo.activated = true;
+            }
+            if (this.gizmoWidget) {
+                this.gizmoWidget.visible = true;
+            }
+        }
+        teardownMoveGizmo() {
+            if (this.moveGizmo) {
+                this.moveGizmo.activated = false;
+            }
+            if (this.gizmoWidget) {
+                this.gizmoWidget.delete();
+                this.gizmoWidget = undefined;
+            }
+            this.moveGizmo = undefined;
+        }
+        updateAnchorFromGizmo(newPosition) {
+            if (!this.isAnchoredMode() || this.isPlacingShape) {
+                return;
+            }
+            const selectedShape = this.getSelectedShape();
+            const rotation = getRotationFromSettings(selectedShape.getSettings());
+            const dimensions = getDimensionsFromSettings(selectedShape);
+            const centerOffset = this.getPrimitiveCenterForShape(selectedShape, dimensions, rotation);
+            this.anchorWorld = {
+                x: newPosition.x - centerOffset.x,
+                y: newPosition.y - centerOffset.y,
+                z: newPosition.z - centerOffset.z
+            };
+            const offset = this.getShapeOffset();
+            this.anchorBase = {
+                x: this.anchorWorld.x - offset.x,
+                y: this.anchorWorld.y - offset.y,
+                z: this.anchorWorld.z - offset.z
+            };
+            if (this.previewWidget) {
+                this.previewWidget.location = this.anchorWorld;
+            }
+            this.updateGizmoLocation();
+        }
+        commitPlacement(commitSource) {
+            if (!this.isAnchoredMode() || !this.anchorWorld) {
+                return;
+            }
+            if (!this.previewWidget) {
+                this.ensurePrimitiveComponentExists();
+            }
+            this.placeShape(commitSource);
+        }
+        handlePrimaryClick() {
+            if (this.isPlacingShape) {
+                return;
+            }
+            const clickPosition = this.uiSession.extensionContext.cursor.getPosition();
+            this.transitionToAnchoredMode(clickPosition, PrimitivesModeChangeTrigger.PrimaryClick);
+        }
+        anchorToViewCenter() {
+            const player = this.uiSession.extensionContext.player;
+            let anchorPos;
+            const hit = player.getBlockFromViewDirection({
+                maxDistance: 64
+            });
+            if (hit) {
+                const block = hit.block.location;
+                const faceOffset = getFaceNormal(toBlockFace(hit.face));
+                anchorPos = {
+                    x: block.x + faceOffset.x,
+                    y: block.y + faceOffset.y,
+                    z: block.z + faceOffset.z
+                };
+            } else {
+                const head = player.getHeadLocation();
+                const dir = player.getViewDirection();
+                const dist = PrimitivesToolBehavior.VIEW_ANCHOR_FALLBACK_DISTANCE;
+                anchorPos = {
+                    x: Math.floor(head.x + dir.x * dist),
+                    y: Math.floor(head.y + dir.y * dist),
+                    z: Math.floor(head.z + dir.z * dist)
+                };
+            }
+            this.transitionToAnchoredMode(anchorPos, PrimitivesModeChangeTrigger.ViewCenterAnchor);
+            this.updatePrimitivePreview();
+        }
+        cleanupPrimitivePreview() {
+            if (this.cursorPositionCallback) {
+                this.uiSession.extensionContext.afterEvents.cursorPropertyChange.unsubscribe(this.cursorPositionCallback);
+                this.cursorPositionCallback = undefined;
+            }
+            this.teardownMoveGizmo();
+            if (this.previewWidget) {
+                this.previewWidget.delete();
+                this.previewWidget = undefined;
+            }
+            this.primitiveComponent = undefined;
+        }
+        createPlacementDialog() {
+            this.placementDialog = this.uiSession.dialogManager.registerDialog({
+                title: "resourcePack.editor.toolRail.primitiveTool.progress.title",
+                uniqueId: PrimitivesToolBehavior.MODAL_DIALOG_ID,
+                width: 75,
+                height: 25
+            });
+            this.placementDialog.contentPane.addText(this.placementProgressMessage, {
+                border: false,
+                alignment: server_editor_namespaceObject.LayoutAlignment.Center
+            });
+            this.placementProgressBar = this.placementDialog.contentPane.addProgressIndicator({
+                progress: this.placementProgressValue,
+                variant: server_editor_namespaceObject.ProgressIndicatorPropertyItemVariant.ProgressBar
+            });
+            this.placementProgressBar.setTooltip(undefined);
+            this.placementSpinner = this.placementDialog.contentPane.addProgressIndicator({
+                variant: server_editor_namespaceObject.ProgressIndicatorPropertyItemVariant.Spinner
+            });
+            this.placementSpinner.setTooltip(undefined);
+            this.placementSpinner.visible = false;
+            this.placementDialog.contentPane.addButton((() => {
+                const hadCommittedPlacementToUndo = this.placementWasCommitted;
+                this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Cancelled, PrimitivesPlacementOutcomeReason.UserCancelDialog, hadCommittedPlacementToUndo ? PrimitivesPlacementOutcomePhase.Placement : PrimitivesPlacementOutcomePhase.Generation, {
+                    hadCommittedPlacementToUndo
+                });
+                if (this.shapeCancelToken) {
+                    this.shapeCancelToken.cancelled = true;
+                    if (this.shapeCancelToken.jobHandle !== undefined) {
+                        server_namespaceObject.system.clearJob(this.shapeCancelToken.jobHandle);
+                    }
+                }
+                if (hadCommittedPlacementToUndo) {
+                    this.placementWasCommitted = false;
+                    try {
+                        this.uiSession.extensionContext.transactionManager.undo();
+                    } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        this.uiSession.log.error(`Failed to undo completed placement: ${msg}`);
+                    }
+                }
+                this.uiSession.dialogManager.dismissActiveDialog();
+                this.finishPlacement();
+                this.uiSession.log.info("Placement cancelled");
+            }), {
+                variant: server_editor_namespaceObject.ButtonVariant.Destructive,
+                title: "resourcePack.editor.toolRail.primitiveTool.progress.cancel"
+            });
+        }
+        placeShape(commitSource) {
+            const placementStartTimeMs = Date.now();
+            if (!this.isAnchoredMode() || !this.anchorWorld) {
+                this.uiSession.log.warning("Shape must be anchored before placement");
+                return;
+            }
+            if (this.isPlacingShape) {
+                this.uiSession.log.warning("Shape placement already in progress");
+                return;
+            }
+            const selectedShape = this.getSelectedShape();
+            const settings = selectedShape.getSettings();
+            const rotation = getRotationFromSettings(settings);
+            const blockCount = this.estimateBlockCount();
+            const telemetryContext = this.getPlacementTelemetryContext(selectedShape, rotation, blockCount);
+            this.telemetryManager.fireTelemetryEvent(PrimitivesToolTelemetry.PlacementAttempted, {
+                commitSource,
+                ...telemetryContext
+            });
+            if (!this.ensureSystemReady()) {
+                this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Failed, PrimitivesPlacementOutcomeReason.SystemNotReady, PrimitivesPlacementOutcomePhase.Validation, {
+                    context: telemetryContext,
+                    hadCommittedPlacementToUndo: false,
+                    startTimeMs: placementStartTimeMs
+                });
+                return;
+            }
+            if (blockCount > PrimitivesToolBehavior.MAX_TOTAL_BLOCKS) {
+                this.uiSession.log.warning("resourcePack.editor.toolRail.primitiveTool.error.maxBlockLimitExceeded", {
+                    channelMask: server_editor_namespaceObject.LogChannel.All
+                });
+                this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Failed, PrimitivesPlacementOutcomeReason.MaxBlockLimitExceeded, PrimitivesPlacementOutcomePhase.Validation, {
+                    context: telemetryContext,
+                    hadCommittedPlacementToUndo: false,
+                    startTimeMs: placementStartTimeMs
+                });
+                return;
+            }
+            this.activePlacementTelemetryContext = telemetryContext;
+            this.activePlacementStartTimeMs = placementStartTimeMs;
+            this.isPlacingShape = true;
+            this.uiSession.extensionContext.cursor.updatePropertiesById({
+                controlMode: server_editor_namespaceObject.CursorControlMode.Keyboard
+            }, this.tool.id);
+            const needsAsyncDialog = hasEffectiveRotation(rotation) || !!settings?.hollow || telemetryContext.computationVolume > PrimitivesToolBehavior.MAX_SYNC_BLOCKS;
+            this.placeShapeAsync(blockCount, needsAsyncDialog);
+        }
+        ensureSystemReady() {
+            if (this.uiSession.extensionContext.transactionManager.isBusy()) {
+                this.uiSession.log.debug("Transaction manager busy - attempting to discard");
+                try {
+                    this.uiSession.extensionContext.transactionManager.discardOpenTransaction();
+                } catch (e) {
+                    const errorMessage = e instanceof Error ? e.message : String(e);
+                    this.uiSession.log.error(`Transaction recovery failed: ${errorMessage}`, {
+                        channelMask: server_editor_namespaceObject.LogChannel.All
+                    });
+                }
+                if (this.uiSession.extensionContext.transactionManager.isBusy()) {
+                    this.uiSession.log.error("Transaction manager still busy. Please try again.");
+                    return false;
+                }
+            }
+            return true;
+        }
+        tryDiscardOpenTransaction(context) {
+            if (this.uiSession.extensionContext.transactionManager.isBusy()) {
+                this.uiSession.log.debug(`Cannot discard transaction${context ? ` (${context})` : ""}: transaction manager is busy`);
+                return false;
+            }
+            try {
+                this.uiSession.extensionContext.transactionManager.discardOpenTransaction();
+                return true;
+            } catch (e) {
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                this.uiSession.log.error("resourcePack.editor.toolRail.primitiveTool.error.discardFailed", {
+                    channelMask: server_editor_namespaceObject.LogChannel.All
+                });
+                this.uiSession.log.error(`Failed to discard transaction${context ? ` (${context})` : ""}: ${errorMessage}`);
+                return false;
+            }
+        }
+        getPlacementOffset() {
+            if (this.previewWidget) {
+                const cursorPos = this.uiSession.extensionContext.cursor.getPosition();
+                const widgetPos = this.previewWidget.location;
+                return {
+                    x: widgetPos.x - cursorPos.x,
+                    y: widgetPos.y - cursorPos.y,
+                    z: widgetPos.z - cursorPos.z
+                };
+            }
+            return this.getShapeOffset();
+        }
+        placeShapeAsync(blockCount, showDialog) {
+            const selectedShape = this.getSelectedShape();
+            this.shapeCancelToken = {
+                cancelled: false,
+                onProgress: progress => {
+                    if (this.placementProgressBar && this.placementSpinner) {
+                        if (!this.placementProgressBar.visible) {
+                            this.placementProgressBar.visible = true;
+                            this.placementSpinner.visible = false;
+                            this.placementProgressMessage.set("resourcePack.editor.toolRail.primitiveTool.progress.calculatingPositions");
+                        }
+                    }
+                    this.placementProgressValue.set(Math.min(progress, .99));
+                }
+            };
+            const token = this.shapeCancelToken;
+            if (showDialog) {
+                this.placementProgressMessage.set("resourcePack.editor.toolRail.primitiveTool.progress.placingBlocks");
+                this.placementProgressValue.set(0);
+                if (this.placementProgressBar && this.placementSpinner) {
+                    this.placementProgressBar.visible = false;
+                    this.placementSpinner.visible = true;
+                }
+                this.uiSession.dialogManager.activateDialog({
+                    dialogId: PrimitivesToolBehavior.MODAL_DIALOG_ID
+                });
+            }
+            selectedShape.createShapeAsync(token, PrimitivesToolBehavior.SHAPE_GENERATOR_YIELD_INTERVAL).then((async shapeVolume => {
+                if (token.cancelled || token !== this.shapeCancelToken) {
+                    this.finishPlacement();
+                    return;
+                }
+                if (showDialog) {
+                    this.placementProgressMessage.set("resourcePack.editor.toolRail.primitiveTool.progress.placingBlocks");
+                    if (this.placementProgressBar && this.placementSpinner) {
+                        this.placementProgressBar.visible = false;
+                        this.placementSpinner.visible = true;
+                    }
+                }
+                const targetWorldPos = this.getPreviewWidgetLocation();
+                try {
+                    await this.executeServerSidePlacement(shapeVolume, targetWorldPos, blockCount);
+                } catch (e) {
+                    const errorMessage = e instanceof Error ? e.message : String(e);
+                    this.uiSession.log.error(`Failed to place shape: ${errorMessage}`, {
+                        channelMask: server_editor_namespaceObject.LogChannel.All
+                    });
+                    this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Failed, PrimitivesPlacementOutcomeReason.PlacementError, PrimitivesPlacementOutcomePhase.Placement);
+                }
+                this.finishPlacement();
+            })).catch((e => {
+                if (token !== this.shapeCancelToken) {
+                    this.uiSession.log.info("Shape generation completed with stale token; discarding result");
+                    this.finishPlacement();
+                    return;
+                }
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                if (errorMessage.includes("interrupted") || errorMessage.includes("cancelled")) {
+                    this.uiSession.log.info(`Shape generation was cancelled`, {
+                        channelMask: server_editor_namespaceObject.LogChannel.All
+                    });
+                    this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Cancelled, PrimitivesPlacementOutcomeReason.GenerationCancelled, PrimitivesPlacementOutcomePhase.Generation);
+                } else {
+                    this.uiSession.log.error(`Failed to create shape: ${errorMessage}`, {
+                        channelMask: server_editor_namespaceObject.LogChannel.All
+                    });
+                    this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Failed, PrimitivesPlacementOutcomeReason.GenerationError, PrimitivesPlacementOutcomePhase.Generation);
+                }
+                if (showDialog) {
+                    this.uiSession.dialogManager.dismissActiveDialog();
+                }
+                this.finishPlacement();
+            }));
+        }
+        async executeServerSidePlacement(shapeVolume, targetWorldPos, blockCount) {
+            shapeVolume.origin = {
+                x: Math.floor(targetWorldPos.x),
+                y: Math.floor(targetWorldPos.y),
+                z: Math.floor(targetWorldPos.z)
+            };
+            this.uiSession.log.info(`Placing ${blockCount.toLocaleString()} blocks`);
+            await executeFunctionWithTransactionAndTicking(this.uiSession.extensionContext, this.uiSession.log, shapeVolume, "PlacePrimitive", (() => {
+                this.uiSession.extensionContext.blockUtilities.fillVolume(shapeVolume);
+            }));
+            this.placementWasCommitted = true;
+            this.uiSession.log.info("Shape placed successfully");
+            this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Success, PrimitivesPlacementOutcomeReason.None, PrimitivesPlacementOutcomePhase.Placement, {
+                hadCommittedPlacementToUndo: false
+            });
+        }
+        finishPlacement() {
+            if (!this.isPlacingShape) {
+                return;
+            }
+            this.isPlacingShape = false;
+            this.placementWasCommitted = false;
+            this.shapeCancelToken = undefined;
+            this.activePlacementTelemetryContext = undefined;
+            this.activePlacementStartTimeMs = undefined;
+            this.uiSession.extensionContext.cursor.updatePropertiesById({
+                controlMode: server_editor_namespaceObject.CursorControlMode.KeyboardAndMouse
+            }, this.tool.id);
+            this.uiSession.dialogManager.dismissActiveDialog();
+            if (this.placementProgressBar && this.placementSpinner) {
+                this.placementProgressBar.visible = true;
+                this.placementSpinner.visible = false;
+                this.placementProgressValue.set(0);
+            }
+            if (this.primitiveComponent) {
+                this.primitiveComponent.visible = true;
+            }
+            if (this.previewWidget) {
+                this.anchorWorld = {
+                    ...this.previewWidget.location
+                };
+                const offset = this.getShapeOffset();
+                this.anchorBase = {
+                    x: this.anchorWorld.x - offset.x,
+                    y: this.anchorWorld.y - offset.y,
+                    z: this.anchorWorld.z - offset.z
+                };
+                this.placementMode = ShapePlacementMode.Anchored;
+                this.updateGizmoLocation();
+            }
+        }
+        teardown() {
+            this.clearTickHandler();
+            const teardownOutcomeContext = this.activePlacementTelemetryContext;
+            const teardownOutcomeStartTimeMs = this.activePlacementStartTimeMs;
+            this.transitionToCursorMode(PrimitivesModeChangeTrigger.TeardownReset);
+            if (this.shapeCancelToken) {
+                this.shapeCancelToken.cancelled = true;
+                if (this.shapeCancelToken.jobHandle !== undefined) {
+                    server_namespaceObject.system.clearJob(this.shapeCancelToken.jobHandle);
+                }
+                this.shapeCancelToken = undefined;
+            }
+            if (this.isPlacingShape) {
+                this.firePlacementOutcomeTelemetry(PrimitivesPlacementOutcome.Cancelled, PrimitivesPlacementOutcomeReason.ToolDeactivated, this.placementWasCommitted ? PrimitivesPlacementOutcomePhase.Placement : PrimitivesPlacementOutcomePhase.Generation, {
+                    context: teardownOutcomeContext,
+                    startTimeMs: teardownOutcomeStartTimeMs
+                });
+                try {
+                    this.uiSession.extensionContext.transactionManager.discardOpenTransaction();
+                } catch (cleanupError) {
+                    const cleanupErrorMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+                    this.uiSession.log.error(`Failed to teardown transaction: ${cleanupErrorMessage}`, {
+                        channelMask: server_editor_namespaceObject.LogChannel.All
+                    });
+                }
+                this.isPlacingShape = false;
+            }
+            this.placementWasCommitted = false;
+            try {
+                this.uiSession.dialogManager.dismissActiveDialog();
+            } catch (cleanupError) {
+                const cleanupErrorMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+                this.uiSession.log.debug(`Failed to dismiss active dialog during teardown: ${cleanupErrorMessage}`, {
+                    channelMask: server_editor_namespaceObject.LogChannel.All
+                });
+            }
+            this.cleanupPrimitivePreview();
+            if (this.widgetGroup) {
+                try {
+                    this.widgetGroup.delete();
+                } catch (cleanupError) {
+                    const cleanupErrorMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+                    this.uiSession.log.debug(`Failed to delete widget group during teardown: ${cleanupErrorMessage}`, {
+                        channelMask: server_editor_namespaceObject.LogChannel.All
+                    });
+                }
+                this.widgetGroup = undefined;
+            }
+            if (this.brushPaintControl) {
+                this.brushPaintControl.shutdown();
+            }
+            if (this.cursorModeControl.isActive) {
+                this.cursorModeControl.deactivateControl();
+            }
+            this.cursorModeControl.shutdown();
+        }
+        onActivate() {
+            this.uiSession.extensionContext.brushShapeManager.deactivateBrushTool();
+            this.uiSession.extensionContext.brushShapeManager.setBrushShapeVisible(false);
+            if (this.brushPaintControl) {
+                this.brushPaintControl.activateControl();
+            }
+            this.uiSession.extensionContext.brushShapeManager.deactivateBrushTool();
+            this.uiSession.extensionContext.brushShapeManager.setBrushShapeVisible(false);
+            if (!this.cursorModeControl.isActive) {
+                this.cursorModeControl.activateControl();
+            }
+            this.cursorPositionCallback = event => {
+                if (event.position) {
+                    this.needsPositionUpdate = true;
+                }
+            };
+            this.uiSession.extensionContext.afterEvents.cursorPropertyChange.subscribe(this.cursorPositionCallback);
+            this.updateTickHandle = server_namespaceObject.system.runInterval((() => {
+                this.processDirtyUpdates();
+            }), PrimitivesToolBehavior.UPDATE_TICK_INTERVAL);
+            if (!this.isPlacingShape) {
+                this.anchorToViewCenter();
+            } else {
+                this.updatePreview();
+            }
+        }
+        processDirtyUpdates() {
+            if (this.isPlacingShape) {
+                return;
+            }
+            if (!this.needsShapeUpdate && !this.needsPositionUpdate) {
+                return;
+            }
+            if (this.needsShapeUpdate) {
+                this.updatePrimitivePreview();
+                this.needsShapeUpdate = false;
+                this.needsPositionUpdate = false;
+            } else if (this.needsPositionUpdate) {
+                this.updateWidgetPosition();
+                this.needsPositionUpdate = false;
+            }
+        }
+        clearTickHandler() {
+            if (this.updateTickHandle !== undefined) {
+                server_namespaceObject.system.clearRun(this.updateTickHandle);
+                this.updateTickHandle = undefined;
+            }
+            this.needsPositionUpdate = false;
+            this.needsShapeUpdate = false;
+        }
+        onDeactivate() {
+            this.clearTickHandler();
+            this.transitionToCursorMode(PrimitivesModeChangeTrigger.DeactivateReset);
+            if (this.brushPaintControl) {
+                this.brushPaintControl.deactivateControl();
+            }
+            if (this.cursorModeControl.isActive) {
+                this.cursorModeControl.deactivateControl();
+            }
+            this.cleanupPrimitivePreview();
+            this.uiSession.extensionContext.brushShapeManager.setBrushShapeVisible(false);
+            this.uiSession.extensionContext.brushShapeManager.deactivateBrushTool();
+        }
+    }
+    PrimitivesToolBehavior.BEHAVIOR_NAME = "Primitives Tool";
+    PrimitivesToolBehavior.MAX_TOTAL_BLOCKS = 2e5;
+    PrimitivesToolBehavior.MAX_SYNC_BLOCKS = 27e3;
+    PrimitivesToolBehavior.UPDATE_TICK_INTERVAL = 2;
+    PrimitivesToolBehavior.SHAPE_GENERATOR_YIELD_INTERVAL = 1e4;
+    PrimitivesToolBehavior.MODAL_DIALOG_ID = "editor:primitiveTool:progressDialog";
+    PrimitivesToolBehavior.PRIMITIVE_PREVIEW_COLOR = {
+        red: 1,
+        green: .8,
+        blue: .2,
+        alpha: .4
+    };
+    PrimitivesToolBehavior.PRIMITIVE_COMPONENT_NAME = "shapePreviewPrimitive";
+    PrimitivesToolBehavior.VIEW_ANCHOR_FALLBACK_DISTANCE = 16;
+    PrimitivesToolBehavior.NUDGE_REPEAT_DELAY = 5;
+    PrimitivesToolBehavior.NUDGE_REPEAT_INTERVAL = 1;
     function createCoreUI(uiSession) {
         if (!uiSession.scratchStorage) {
             throw new Error("Core UI initialization order incorrect");
@@ -42871,6 +44495,7 @@ var __webpack_exports__ = {};
             const floodTool = new FloodToolBehavior(uiSession);
             const scaleTool = new ScaleToolBehavior(uiSession);
             const cinematicTool = new CinematicToolBehavior(uiSession);
+            const primitivesTool = new PrimitivesToolBehavior(uiSession);
             const realmsUploadPane = new RealmsUpload(uiSession, uiSession.scratchStorage.coreMenuItems.file);
             const viewSettings = new SettingsBehavior(uiSession, uiSession.scratchStorage.coreMenuItems.file);
             const orbitLocation = new OrbitLocationBehavior(uiSession);
@@ -42885,7 +44510,7 @@ var __webpack_exports__ = {};
                 tooltip: "resourcePack.editor.menuBar.file.saveAndExit.tooltip"
             }, saveAndExitAction);
             uiSession.log.debug("CoreEditor Extension Initialized\n");
-            return [ selectionBehavior, uiSession.scratchStorage.deleteBehavior, uiSession.scratchStorage.playerCountBehavior, uiSession.scratchStorage.pauseBehavior, uiSession.scratchStorage.newPastePreview, uiSession.scratchStorage.copyPasteBehavior, transactions, playtest, navigationStack, line, summonTool, timeOfDay, navigation, weather, vvBiomeBehavior, jigsawMode, prefabBehavior, rulerTool, exportBehavior, brushPainter, locateTool, smartFill, terrain, extrudeTool, repeaterTool, farmGeneratorTool, viewSettings, workbench, blockInspector, entityInspector, realmsUploadPane, orbitLocation, pencilTool, floodTool, scaleTool, cinematicTool ];
+            return [ selectionBehavior, uiSession.scratchStorage.deleteBehavior, uiSession.scratchStorage.playerCountBehavior, uiSession.scratchStorage.pauseBehavior, uiSession.scratchStorage.newPastePreview, uiSession.scratchStorage.copyPasteBehavior, transactions, playtest, navigationStack, line, summonTool, timeOfDay, navigation, weather, chunkManager, vvBiomeBehavior, jigsawMode, prefabBehavior, rulerTool, exportBehavior, brushPainter, locateTool, smartFill, terrain, extrudeTool, repeaterTool, farmGeneratorTool, viewSettings, workbench, blockInspector, entityInspector, realmsUploadPane, orbitLocation, pencilTool, floodTool, scaleTool, cinematicTool, primitivesTool ];
         }), (uiSession => {
             uiSession.log.debug(`Shutting down ${uiSession.extensionContext.extensionInfo.name} Extension\n`);
             if (uiSession.scratchStorage) {
