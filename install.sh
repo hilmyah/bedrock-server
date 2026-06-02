@@ -114,7 +114,7 @@ fetch_latest_url() {
 
     if [ -z "$url" ]; then
         log WARN "Tracker gagal. Mencoba web scraping HTML (Sering ditolak VPS)..."
-        # Metode 3: Web scraping lama 
+        # Metode 3: Web scraping lama
         url=$(curl -Ls -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             -H "Accept-Language: en-US,en;q=0.9" \
             "https://www.minecraft.net/en-us/download/server/bedrock" \
@@ -155,7 +155,6 @@ install_server() {
     for config_file in server.properties allowlist.json permissions.json; do
         if curl --silent --max-time 10 -o "/tmp/${config_file}" \
             "${REPO_RAW}/${config_file}" 2>/dev/null; then
-            # Hanya timpa jika belum ada
             if [ ! -f "${SERVER_DIR}/${config_file}" ]; then
                 cp "/tmp/${config_file}" "${SERVER_DIR}/${config_file}"
                 log INFO "Dipasang: $config_file"
@@ -182,20 +181,24 @@ install_update_script() {
 }
 
 install_systemd_service() {
-    log STEP "Mengonfigurasi Systemd Service (Opsional)"
+    log STEP "Mengonfigurasi Systemd Service"
 
-    cat > /etc/systemd/system/bedrock-server.service << EOF
+    # Type=simple dengan screen -DmS (D kapital) memaksa screen berjalan di
+    # foreground sehingga systemd dapat melacak PID dengan akurasi penuh.
+    # set -o pipefail memastikan crash pada binary server memicu Restart=on-failure,
+    # tidak ditutupi oleh perintah tee.
+    cat > /etc/systemd/system/bedrock.service << EOF
 [Unit]
 Description=Minecraft Bedrock Server
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 User=root
 WorkingDirectory=${SERVER_DIR}
-ExecStart=/usr/bin/screen -dmS ${SCREEN_NAME} bash -c 'LD_LIBRARY_PATH=. ./bedrock_server | tee -a /var/log/bedrock-server.log'
+ExecStart=/usr/bin/screen -DmS ${SCREEN_NAME} bash -c 'set -o pipefail; LD_LIBRARY_PATH=. ./bedrock_server | tee -a /var/log/bedrock-server.log'
 ExecStop=/usr/bin/screen -S ${SCREEN_NAME} -p 0 -X stuff "stop\r"
-RemainAfterExit=yes
+TimeoutStopSec=30
 Restart=on-failure
 RestartSec=10s
 
@@ -204,9 +207,9 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable bedrock-server.service
+    systemctl enable bedrock.service
     log INFO "Systemd service terdaftar dan diaktifkan (auto-start saat boot)."
-    log INFO "Kontrol service: systemctl [start|stop|status] bedrock-server"
+    log INFO "Kontrol service: systemctl [start|stop|status] bedrock"
 }
 
 install_playit() {
@@ -260,9 +263,7 @@ echo ""
 echo -e "${BOLD}Langkah selanjutnya:${RESET}"
 echo ""
 echo "  1. Jalankan server:"
-echo -e "     ${BLUE}systemctl start bedrock-server${RESET}"
-echo "     atau manual:"
-echo -e "     ${BLUE}screen -S $SCREEN_NAME bash -c 'cd $SERVER_DIR && LD_LIBRARY_PATH=. ./bedrock_server'${RESET}"
+echo -e "     ${BLUE}systemctl start bedrock${RESET}"
 echo ""
 echo "  2. Lihat konsol server:"
 echo -e "     ${BLUE}screen -r $SCREEN_NAME${RESET}  (keluar: Ctrl+A lalu D)"
@@ -276,6 +277,7 @@ echo "  4. Update server di masa mendatang:"
 echo -e "     ${BLUE}sudo bedrock-update${RESET}"
 echo -e "     atau: ${BLUE}sudo $SERVER_DIR/update_bedrock.sh${RESET}"
 echo ""
-echo -e "  Log server  : ${BLUE}tail -f /var/log/bedrock-server.log${RESET}"
-echo -e "  Log update  : ${BLUE}tail -f /var/log/bedrock-update.log${RESET}"
+echo -e "  Status service  : ${BLUE}systemctl status bedrock${RESET}"
+echo -e "  Log server      : ${BLUE}tail -f /var/log/bedrock-server.log${RESET}"
+echo -e "  Log update      : ${BLUE}tail -f /var/log/bedrock-update.log${RESET}"
 echo ""
