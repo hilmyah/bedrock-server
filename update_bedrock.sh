@@ -106,7 +106,6 @@ is_server_running() {
 }
 
 get_current_version() {
-    # Bungkus dalam subshell + || true agar set -e tidak fatal saat file zip tidak ada
     local zip_file
     zip_file=$( (ls "${SERVER_DIR}"/bedrock-server-*.zip 2>/dev/null | sort -V | tail -n 1) || true )
     if [ -n "$zip_file" ]; then
@@ -157,16 +156,13 @@ echo "   Minecraft Bedrock Server — Skrip Pembaruan Otomatis"
 echo "============================================================"
 echo -e "${RESET}"
 
-# Periksa hak akses root
 if [ "$EUID" -ne 0 ]; then
     log ERROR "Skrip ini harus dijalankan sebagai root atau dengan sudo."
     exit 1
 fi
 
-# Periksa dependensi
 check_dependencies
 
-# Masuk ke direktori server
 if [ ! -d "$SERVER_DIR" ]; then
     log ERROR "Direktori server tidak ditemukan: $SERVER_DIR"
     exit 1
@@ -203,8 +199,6 @@ log STEP "Menghentikan Server"
 
 if is_server_running; then
     log INFO "Memerintahkan systemd untuk mematikan server secara sinkron..."
-    # systemctl stop menunggu ExecStop selesai sebelum kembali, sehingga
-    # tidak diperlukan sleep manual — server dijamin sudah berhenti penuh.
     systemctl stop bedrock
     log INFO "Server berhasil dihentikan."
 else
@@ -242,7 +236,6 @@ log INFO "Backup tersimpan di: $BACKUP_DIR/$TIMESTAMP"
 # -----------------------------------------------------------------------------
 log STEP "Mengunduh Binary Terbaru"
 
-# Hapus zip lama untuk menghemat ruang disk
 log INFO "Menghapus installer lama..."
 rm -f bedrock-server-*.zip
 
@@ -262,7 +255,6 @@ if ! wget \
     exit 1
 fi
 
-# Verifikasi file yang diunduh tidak kosong
 if [ ! -s "$FILE_NAME" ]; then
     log ERROR "File yang diunduh kosong atau rusak."
     rm -f "$FILE_NAME"
@@ -291,7 +283,6 @@ for f in "${CONFIG_FILES[@]}"; do
     fi
 done
 
-# Set izin eksekusi
 chmod +x bedrock_server
 log INFO "Izin eksekusi berhasil disetel."
 
