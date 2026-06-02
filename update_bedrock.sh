@@ -5,11 +5,12 @@
 # =============================================================================
 # Deskripsi:
 #   Mengunduh dan memasang versi terbaru binary Minecraft Bedrock Server secara
-#   otomatis: mendeteksi versi terkini, menghentikan server, membackup
-#   konfigurasi, mengekstrak binary baru, lalu menjalankan kembali server.
+#   otomatis: mendeteksi versi terkini, menghentikan server via systemd,
+#   membackup konfigurasi, mengekstrak binary baru, lalu menjalankan kembali
+#   server via systemd.
 #
 # Prasyarat:
-#   curl, wget, unzip, screen
+#   curl, wget, unzip, screen, systemctl
 #
 # Penggunaan:
 #   sudo bash update_bedrock.sh [--force] [--no-restart] [--backup-worlds]
@@ -28,7 +29,6 @@ set -euo pipefail
 SERVER_DIR="/opt/bedrock-server"
 SCREEN_NAME="mc-server"
 BACKUP_DIR="/opt/bedrock-server-backup"
-SHUTDOWN_WAIT=15       # Detik menunggu server shutdown (naikkan jika dunia besar)
 LOG_FILE="/var/log/bedrock-update.log"
 MINECRAFT_DOWNLOAD_URL="https://www.minecraft.net/en-us/download/server/bedrock"
 
@@ -88,7 +88,7 @@ log() {
 
 check_dependencies() {
     local missing=()
-    for cmd in curl wget unzip screen; do
+    for cmd in curl wget unzip screen systemctl; do
         if ! command -v "$cmd" &>/dev/null; then
             missing+=("$cmd")
         fi
@@ -102,7 +102,7 @@ check_dependencies() {
 }
 
 is_server_running() {
-    screen -list | grep -q "\.${SCREEN_NAME}\b"
+    systemctl is-active --quiet bedrock
 }
 
 get_current_version() {
@@ -132,7 +132,7 @@ fetch_latest_url() {
 
     if [ -z "$url" ]; then
         log WARN "Tracker gagal. Mencoba web scraping HTML (Sering ditolak VPS)..."
-        # Metode 3: Web scraping lama 
+        # Metode 3: Web scraping lama
         url=$(curl -Ls -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             -H "Accept-Language: en-US,en;q=0.9" \
             "https://www.minecraft.net/en-us/download/server/bedrock" \
@@ -147,6 +147,7 @@ fetch_latest_url() {
 
     echo "$url"
 }
+
 # -----------------------------------------------------------------------------
 # MULAI EKSEKUSI
 # -----------------------------------------------------------------------------
@@ -201,23 +202,10 @@ fi
 log STEP "Menghentikan Server"
 
 if is_server_running; then
-    log INFO "Sesi screen '${SCREEN_NAME}' ditemukan. Mengirim perintah stop..."
-    screen -S "$SCREEN_NAME" -p 0 -X stuff "say §eServer akan dimatikan untuk pembaruan dalam 10 detik...$(printf \\r)"
-    sleep 5
-    screen -S "$SCREEN_NAME" -p 0 -X stuff "stop$(printf \\r)"
-
-    log INFO "Menunggu server menyimpan data dunia (${SHUTDOWN_WAIT} detik)..."
-    sleep "$SHUTDOWN_WAIT"
-
-    # Verifikasi server benar-benar berhenti
-    if is_server_running; then
-        log WARN "Server belum berhenti sepenuhnya. Menunggu 15 detik tambahan..."
-        sleep 15
-        if is_server_running; then
-            log WARN "Memaksa penghentian sesi screen..."
-            screen -S "$SCREEN_NAME" -X quit || true
-        fi
-    fi
+    log INFO "Memerintahkan systemd untuk mematikan server secara sinkron..."
+    # systemctl stop menunggu ExecStop selesai sebelum kembali, sehingga
+    # tidak diperlukan sleep manual — server dijamin sudah berhenti penuh.
+    systemctl stop bedrock
     log INFO "Server berhasil dihentikan."
 else
     log INFO "Server tidak sedang berjalan. Melanjutkan pembaruan."
@@ -313,18 +301,19 @@ log INFO "Izin eksekusi berhasil disetel."
 if [ "$NO_RESTART" = true ]; then
     log WARN "Flag --no-restart aktif. Server tidak akan dijalankan ulang secara otomatis."
     log INFO "Jalankan server secara manual dengan:"
-    log INFO "  screen -dmS $SCREEN_NAME bash -c 'cd $SERVER_DIR && LD_LIBRARY_PATH=. ./bedrock_server'"
+    log INFO "  systemctl start bedrock"
 else
     log STEP "Menjalankan Ulang Server"
-    screen -dmS "$SCREEN_NAME" bash -c "cd $SERVER_DIR && LD_LIBRARY_PATH=. ./bedrock_server | tee -a /var/log/bedrock-server.log"
+    systemctl start bedrock
     sleep 3
 
     if is_server_running; then
-        log INFO "Server berhasil dijalankan di sesi screen '${SCREEN_NAME}'."
-        log INFO "Lihat dengan: screen -r $SCREEN_NAME"
+        log INFO "Server berhasil dihidupkan melalui systemd."
+        log INFO "Lihat konsol dengan: screen -r $SCREEN_NAME"
     else
-        log ERROR "Server gagal dijalankan. Periksa log untuk detail:"
-        log ERROR "  tail -n 50 /var/log/bedrock-server.log"
+        log ERROR "Server gagal dijalankan. Periksa log dengan:"
+        log ERROR "  systemctl status bedrock"
+        log ERROR "  journalctl -u bedrock -n 50"
         exit 1
     fi
 fi
@@ -334,12 +323,12 @@ fi
 # -----------------------------------------------------------------------------
 echo -e "\n${GREEN}${BOLD}============================================================"
 echo "   Pembaruan Berhasil Diselesaikan!"
-echo "============================================================${RESET}"
+echo -e "============================================================${RESET}"
 echo -e "  Versi sebelumnya : ${RED}${CURRENT_VERSION}${RESET}"
 echo -e "  Versi terpasang  : ${GREEN}${LATEST_VERSION}${RESET}"
 echo -e "  Backup tersimpan : ${BACKUP_DIR}/${TIMESTAMP}"
 echo -e "  Log tersedia di  : ${LOG_FILE}"
 if [ "$NO_RESTART" = false ]; then
-    echo -e "  Server berjalan  : screen -r ${SCREEN_NAME}"
+    echo -e "  Konsol server    : screen -r ${SCREEN_NAME}"
 fi
 echo ""

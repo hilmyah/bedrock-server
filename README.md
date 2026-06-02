@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-# Minecraft Bedrock Server
-=======
 # Minecraft Bedrock Server Setup
->>>>>>> ff22776966679916722f9a674610deba58b5cd8e
 
 Repositori ini berisi konfigurasi, skrip manajemen, dan panduan lengkap untuk menjalankan Minecraft Bedrock Server di Debian/Ubuntu menggunakan [Playit.gg](https://playit.gg) sebagai tunnel publik tanpa memerlukan IP publik atau konfigurasi port forwarding.
 
@@ -31,7 +27,7 @@ Repositori ini berisi konfigurasi, skrip manajemen, dan panduan lengkap untuk me
 |---|---|
 | Sistem Operasi | Debian 11+ / Ubuntu 20.04+ |
 | Akses | `root` atau `sudo` |
-| Paket | `curl`, `wget`, `unzip`, `screen` |
+| Paket | `curl`, `wget`, `unzip`, `screen`, `systemctl` |
 | Koneksi | Internet aktif saat instalasi dan update |
 
 Instal semua dependensi sekaligus:
@@ -151,29 +147,48 @@ Playit.gg akan berjalan sebagai background service secara otomatis setelah konfi
 
 ### 3. Menjalankan Server
 
-Gunakan `screen` agar server tetap berjalan saat sesi terminal ditutup.
+Server dikelola oleh **systemd** sebagai service, dengan `screen` digunakan sebagai konsol interaktif. Konfigurasi ini memungkinkan server otomatis berjalan saat boot dan dapat dimonitor secara real-time.
 
-**a. Buat sesi screen baru dan jalankan server:**
-
-```bash
-screen -dmS mc-server bash -c 'cd /opt/bedrock-server && LD_LIBRARY_PATH=. ./bedrock_server | tee -a /var/log/bedrock-server.log'
-```
-
-**b. Lihat konsol server secara langsung (re-attach):**
+**a. Buat file konfigurasi systemd service:**
 
 ```bash
-screen -r mc-server
+cat << 'EOF' > /etc/systemd/system/bedrock.service
+[Unit]
+Description=Minecraft Bedrock Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bedrock-server
+ExecStart=/usr/bin/screen -DmS mc-server bash -c 'set -o pipefail; LD_LIBRARY_PATH=. ./bedrock_server | tee -a /var/log/bedrock-server.log'
+ExecStop=/usr/bin/screen -S mc-server -p 0 -X stuff "stop\r"
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+EOF
 ```
 
-**c. Keluar dari konsol tanpa menghentikan server:**
+> **Catatan teknis:** `Type=simple` dengan argumen `screen -DmS` (bukan `-dmS`) memaksa screen berjalan di foreground sehingga systemd dapat melacak PID-nya dengan akurasi penuh. `set -o pipefail` memastikan crash pada binary server memicu `Restart=on-failure` dengan benar, tidak ditutupi oleh perintah `tee`.
 
-Tekan `Ctrl+A`, lalu `D` (Detach).
+**b. Aktifkan dan jalankan service:**
+
+```bash
+systemctl daemon-reload
+systemctl enable bedrock
+systemctl start bedrock
+```
 
 ---
 
 ## Manajemen Server
 
 ### Perintah Screen
+
+Walaupun server dikelola oleh systemd, konsol interaktifnya tetap dapat diakses melalui `screen`.
 
 | Perintah | Fungsi |
 |---|---|
@@ -183,27 +198,30 @@ Tekan `Ctrl+A`, lalu `D` (Detach).
 
 ### Systemd Service
 
-Jika menggunakan installer otomatis, server terdaftar sebagai systemd service dan akan **auto-start saat boot**.
+Server terdaftar sebagai systemd service dan akan **auto-start saat boot**.
 
 ```bash
 # Menjalankan server
-sudo systemctl start bedrock-server
+sudo systemctl start bedrock
 
-# Menghentikan server
-sudo systemctl stop bedrock-server
+# Menghentikan server (graceful shutdown via perintah stop ke konsol)
+sudo systemctl stop bedrock
 
 # Melihat status
-sudo systemctl status bedrock-server
+sudo systemctl status bedrock
 
 # Melihat log real-time
-sudo journalctl -u bedrock-server -f
+sudo journalctl -u bedrock -f
+
+# Melihat log output server
+tail -f /var/log/bedrock-server.log
 ```
 
 ---
 
 ## Pembaruan Otomatis
 
-Repositori ini menyertakan skrip `update_bedrock.sh` yang menangani seluruh proses pembaruan secara otomatis.
+Repositori ini menyertakan skrip `update_bedrock.sh` yang menangani seluruh proses pembaruan secara otomatis, termasuk integrasi penuh dengan systemd untuk shutdown dan startup yang aman.
 
 ### Cara Penggunaan
 
@@ -243,12 +261,12 @@ sudo bedrock-update --backup-worlds --force
 
 ### Mekanisme Kerja Skrip
 
-1. **Deteksi versi** — Membandingkan versi terpasang dengan versi terbaru dari situs resmi Minecraft menggunakan scraping dengan header User-Agent yang sesuai.
-2. **Penghentian aman** — Mengirim perintah `stop` ke sesi screen aktif dan menunggu server menyimpan data dunia sebelum dilanjutkan.
+1. **Deteksi versi** — Membandingkan versi terpasang dengan versi terbaru dari situs resmi Minecraft, dengan sistem fallback 3 lapis.
+2. **Penghentian aman** — Mendelegasikan shutdown ke `systemctl stop bedrock`, yang secara otomatis mengirim perintah `stop` ke konsol dan menunggu server menyimpan data dunia sebelum dilanjutkan.
 3. **Backup konfigurasi** — Menyalin `server.properties`, `allowlist.json`, dan `permissions.json` ke direktori backup bertimestamp (`/opt/bedrock-server-backup/YYYYMMDD_HHMMSS/`).
 4. **Unduh dan ekstrak** — Mengunduh binary baru dengan retry otomatis, lalu mengekstrak dengan mode overwrite (`unzip -o`).
 5. **Pemulihan konfigurasi** — Mengembalikan file konfigurasi dari backup agar pengaturan tidak hilang.
-6. **Jalankan ulang** — Memulai kembali server di sesi screen dan memverifikasi bahwa proses berjalan dengan sukses.
+6. **Jalankan ulang** — Memulai kembali server via `systemctl start bedrock` dan memverifikasi bahwa service aktif.
 
 ### Log
 
@@ -310,15 +328,15 @@ Jika *web scraping* langsung ke situs Minecraft.net diblokir oleh layanan perlin
 
 Jika ketiga metode ini masih gagal, unduh zip secara manual ke dalam `/opt/bedrock-server/` lalu jalankan `sudo bedrock-update --force`.
 
-**Skrip update gagal mendapatkan URL unduhan**
-
-Situs Minecraft.net terkadang memperbarui struktur halaman. Coba unduh manual dari [minecraft.net/en-us/download/server/bedrock](https://www.minecraft.net/en-us/download/server/bedrock) dan tempatkan file `.zip` di `/opt/bedrock-server/`, kemudian jalankan skrip dengan `--force`.
-
 **Server crash saat startup**
 
 Periksa log server:
 ```bash
 tail -n 100 /var/log/bedrock-server.log
+```
+Atau periksa melalui systemd:
+```bash
+journalctl -u bedrock -n 100
 ```
 Penyebab umum: library sistem tidak kompatibel (gunakan Debian 11+ atau Ubuntu 20.04+).
 
@@ -332,6 +350,10 @@ Jika sesi tampak "Attached", paksa detach dengan:
 ```bash
 screen -d mc-server && screen -r mc-server
 ```
+
+**Server terdeteksi mati padahal sebenarnya berjalan (false negative)**
+
+Pastikan Anda menggunakan konfigurasi systemd dengan `Type=simple` dan `screen -DmS` (huruf besar `D`). Konfigurasi lama dengan `Type=forking` dan `screen -dmS` menyebabkan systemd kehilangan jejak PID sehingga melaporkan status yang tidak akurat.
 
 ---
 
