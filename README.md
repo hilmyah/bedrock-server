@@ -1,6 +1,11 @@
-# Minecraft Bedrock Server Setup
+<div align="center">
+  <h1>Minecraft Bedrock Server Setup</h1>
+  <p>Konfigurasi, skrip manajemen, dan panduan operasional komprehensif untuk menjalankan Minecraft Bedrock Server di lingkungan Linux menggunakan Playit.gg sebagai tunnel jaringan publik.</p>
+</div>
 
-Repositori ini berisi konfigurasi, skrip manajemen, dan panduan lengkap untuk menjalankan Minecraft Bedrock Server di Debian/Ubuntu menggunakan [Playit.gg](https://playit.gg) sebagai tunnel publik tanpa memerlukan IP publik atau konfigurasi port forwarding.
+![Platform](https://img.shields.io/badge/Platform-Debian%20%7C%20Ubuntu-A81D33?logo=ubuntu&logoColor=white)
+![Shell](https://img.shields.io/badge/Script-Bash-4EAA25?logo=gnu-bash&logoColor=white)
+![Network](https://img.shields.io/badge/Network-Playit.gg-0052CC)
 
 ---
 
