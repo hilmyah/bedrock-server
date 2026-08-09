@@ -1,6 +1,7 @@
 {
 	"result": {
 		"pageId": "DressingRoom_ExpandedAppearanceView",
+		"addToRecentlyViewed": false,
 		"rows": [
 			{
 				"controlId": "Layout",
