@@ -26,20 +26,23 @@ BLUE='\033[0;34m'; BOLD='\033[1m'; RESET='\033[0m'
 
 # FLAG OPSI
 WITH_PLAYIT=false
+SKIP_PLAYERLOG=false
 PORT=19132
 
 for arg in "$@"; do
     case "$arg" in
         --with-playit)   WITH_PLAYIT=true ;;
+        --skip-playerlog) SKIP_PLAYERLOG=true ;;
         --port=*)        PORT="${arg#*=}" ;;
         --dir=*)         SERVER_DIR="${arg#*=}" ;;
         --help|-h)
             echo "Penggunaan: install.sh [opsi]"
             echo ""
             echo "Opsi:"
-            echo "  --with-playit    Instal dan konfigurasi Playit.gg tunnel"
-            echo "  --port=PORT      Port UDP server (default: 19132)"
-            echo "  --dir=PATH       Direktori instalasi (default: /opt/bedrock-server)"
+            echo "  --with-playit     Instal dan konfigurasi Playit.gg tunnel"
+            echo "  --skip-playerlog  Jangan aktifkan player activity logger otomatis"
+            echo "  --port=PORT       Port UDP server (default: 19132)"
+            echo "  --dir=PATH        Direktori instalasi (default: /opt/bedrock-server)"
             exit 0
             ;;
         *)
@@ -180,6 +183,19 @@ install_update_script() {
     log INFO "Symlink dibuat: bedrock-update (jalankan dari direktori mana saja)"
 }
 
+install_manager_script() {
+    log STEP "Memasang Skrip Manajemen Terpadu (bedrock-manager.sh)"
+
+    curl --silent --max-time 30 \
+        -o "${SERVER_DIR}/bedrock-manager.sh" \
+        "${REPO_RAW}/bedrock-manager.sh"
+
+    chmod +x "${SERVER_DIR}/bedrock-manager.sh"
+    ln -sf "${SERVER_DIR}/bedrock-manager.sh" /usr/local/bin/bedrock
+    log INFO "Skrip manajemen dipasang: ${SERVER_DIR}/bedrock-manager.sh"
+    log INFO "Symlink dibuat: bedrock (mis. 'bedrock status', 'bedrock backup --worlds')"
+}
+
 install_systemd_service() {
     log STEP "Mengonfigurasi Systemd Service"
 
@@ -212,6 +228,41 @@ EOF
     log INFO "Kontrol service: systemctl [start|stop|status] bedrock"
 }
 
+install_logrotate() {
+    log STEP "Memasang Rotasi Log Konsol Server"
+    # PENTING: hanya berlaku untuk /var/log/bedrock-server.log (output mentah
+    # konsol server). File player_activity.log SENGAJA TIDAK diberi rotasi
+    # apa pun agar riwayat join/leave pemain permanen sesuai spesifikasi.
+    #
+    # 'copytruncate' dipakai (bukan 'create'/postrotate kill -HUP) karena
+    # proses 'tee -a' pada bedrock.service memegang file descriptor terbuka
+    # terus-menerus; tanpa copytruncate, tee akan tetap menulis ke file lama
+    # yang sudah di-rename dan file baru akan selalu kosong.
+    cat > /etc/logrotate.d/bedrock-server << 'EOF'
+/var/log/bedrock-server.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+    log INFO "Rotasi dipasang: /var/log/bedrock-server.log (mingguan, simpan 8 arsip, copytruncate)."
+    log INFO "player_activity.log TIDAK terpengaruh, tetap permanen tanpa rotasi."
+}
+
+install_playerlog() {
+    log STEP "Mengaktifkan Player Activity Logger"
+    if bash "${SERVER_DIR}/bedrock-manager.sh" logger install; then
+        log INFO "Player activity logger aktif sejak instalasi awal."
+    else
+        log WARN "Gagal mengaktifkan player logger otomatis."
+        log WARN "Jalankan manual nanti dengan: bedrock logger install"
+    fi
+}
+
 install_playit() {
     log STEP "Memasang Playit.gg"
 
@@ -240,6 +291,7 @@ echo -e "${RESET}"
 echo "  Direktori target : $SERVER_DIR"
 echo "  Screen session   : $SCREEN_NAME"
 echo "  Playit.gg        : $([ "$WITH_PLAYIT" = true ] && echo "Ya" || echo "Tidak")"
+echo "  Player logger    : $([ "$SKIP_PLAYERLOG" = true ] && echo "Tidak (dilewati)" || echo "Ya (otomatis)")"
 echo ""
 
 check_root
@@ -247,7 +299,16 @@ check_os
 install_dependencies
 install_server
 install_update_script
+install_manager_script
 install_systemd_service
+install_logrotate
+
+systemctl start bedrock.service
+sleep 3
+
+if [ "$SKIP_PLAYERLOG" = false ]; then
+    install_playerlog
+fi
 
 if [ "$WITH_PLAYIT" = true ]; then
     install_playit
@@ -262,22 +323,28 @@ echo "============================================================${RESET}"
 echo ""
 echo -e "${BOLD}Langkah selanjutnya:${RESET}"
 echo ""
-echo "  1. Jalankan server:"
-echo -e "     ${BLUE}systemctl start bedrock${RESET}"
+echo "  1. Cek status server:"
+echo -e "     ${BLUE}bedrock status${RESET}"
 echo ""
 echo "  2. Lihat konsol server:"
-echo -e "     ${BLUE}screen -r $SCREEN_NAME${RESET}  (keluar: Ctrl+A lalu D)"
+echo -e "     ${BLUE}bedrock console${RESET}  (keluar: Ctrl+A lalu D)"
 echo ""
 if [ "$WITH_PLAYIT" = true ]; then
     echo "  3. Konfigurasi Playit.gg:"
     echo -e "     ${BLUE}playit${RESET}  (buka link yang muncul, tambahkan tunnel Minecraft Bedrock UDP:$PORT)"
     echo ""
 fi
-echo "  4. Update server di masa mendatang:"
-echo -e "     ${BLUE}sudo bedrock-update${RESET}"
-echo -e "     atau: ${BLUE}sudo $SERVER_DIR/update_bedrock.sh${RESET}"
+echo "  4. Backup mandiri (tidak memicu update):"
+echo -e "     ${BLUE}bedrock backup --worlds${RESET}"
+echo ""
+echo "  5. Update server di masa mendatang:"
+echo -e "     ${BLUE}bedrock update${RESET}  (atau: sudo bedrock-update)"
+echo ""
+echo "  6. Riwayat pemain (permanen, tanpa rotasi):"
+echo -e "     ${BLUE}bedrock players stats${RESET}"
 echo ""
 echo -e "  Status service  : ${BLUE}systemctl status bedrock${RESET}"
 echo -e "  Log server      : ${BLUE}tail -f /var/log/bedrock-server.log${RESET}"
 echo -e "  Log update      : ${BLUE}tail -f /var/log/bedrock-update.log${RESET}"
+echo -e "  Semua perintah  : ${BLUE}bedrock help${RESET}"
 echo ""

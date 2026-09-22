@@ -20,7 +20,9 @@ Repositori ini berisi konfigurasi, skrip manajemen, dan panduan lengkap untuk me
 - [Struktur Repository](#struktur-repository)
 - [Prasyarat](#prasyarat)
 - [Instalasi](#instalasi)
-- [Manajemen dan Operasional](#manajemen-dan-operasional)
+- [Manajemen Terpadu (bedrock-manager.sh)](#manajemen-terpadu-bedrock-managersh)
+- [Backup dan Restore](#backup-dan-restore)
+- [Log Aktivitas Pemain](#log-aktivitas-pemain)
 - [Pembaruan](#pembaruan)
 - [Troubleshooting](#troubleshooting)
 - [Lisensi](#lisensi)
@@ -31,10 +33,12 @@ Repositori ini berisi konfigurasi, skrip manajemen, dan panduan lengkap untuk me
 
 | Fitur | Deskripsi |
 |---|---|
-| Instalasi Satu Perintah | Skrip `install.sh` menangani seluruh proses: unduh binary, konfigurasi systemd service, dan opsional instalasi Playit.gg dalam satu perintah. |
+| Instalasi Satu Perintah | Skrip `install.sh` menangani seluruh proses: unduh binary, pasang `bedrock-manager.sh`, konfigurasi systemd service, rotasi log konsol, player activity logger, dan opsional Playit.gg — semua dalam satu perintah. |
 | Playit.gg Tunnel | Menyediakan alamat publik permanen untuk server tanpa memerlukan IP statis atau konfigurasi port forwarding pada router. |
 | Systemd Service | Server diregistrasikan sebagai systemd service dengan restart otomatis saat crash (`Restart=on-failure`) dan auto-start saat boot. |
-| Konsol Interaktif | Screen session bernama `mc-server` memungkinkan akses konsol server secara interaktif tanpa menghentikan proses. |
+| Manajemen Terpadu | `bedrock-manager.sh` (dipanggil sebagai `bedrock`) menyatukan start/stop/restart/status, konsol, kirim perintah in-game, backup mandiri, restore, dan pembacaan log pemain dalam satu CLI. |
+| Backup Independen dari Update | `bedrock backup` dapat dijalankan kapan pun tanpa memicu proses update. Backup worlds memakai mekanisme resmi `save hold`/`save query`/`save resume` agar server tidak perlu berhenti. |
+| Log Aktivitas Pemain Permanen | Setiap event join/leave pemain di-append ke `player_activity.log`. Tidak ada rotasi atau penghapusan otomatis berdasarkan waktu — riwayat hanya reset jika file dihapus manual. |
 | Pembaruan Otomatis | Skrip `update_bedrock.sh` mendeteksi versi terbaru, menghentikan server dengan aman, mem-backup konfigurasi, lalu memperbarui binary secara otomatis dengan sistem fallback 3 lapis. |
 
 ---
@@ -53,9 +57,15 @@ Server berjalan di host Linux dan diekspos ke internet melalui Playit.gg tanpa m
                                                                              |  systemd + screen  |
                                                                              |  (Process Mgmt)    |
                                                                              +--------------------+
+                                                                                        |
+                                                                             +--------------------+
+                                                                             | bedrock-manager.sh |
+                                                                             | (start/stop/backup/|
+                                                                             |  restore/players)  |
+                                                                             +--------------------+
 ```
 
-Server dikelola oleh systemd menggunakan `Type=simple` dengan `screen -DmS` agar systemd dapat melacak PID proses secara akurat. Screen berjalan di foreground dari perspektif systemd sekaligus menyediakan sesi konsol interaktif yang dapat diakses kapan pun.
+Server dikelola oleh systemd menggunakan `Type=simple` dengan `screen -DmS` agar systemd dapat melacak PID proses secara akurat. Screen berjalan di foreground dari perspektif systemd sekaligus menyediakan sesi konsol interaktif yang dapat diakses kapan pun. `bedrock-manager.sh` berada di atas lapisan ini: ia mengirim perintah ke sesi screen yang sama, memanggil `systemctl`, dan membaca/menulis log — tanpa mengubah cara systemd mengelola proses.
 
 ---
 
@@ -63,22 +73,34 @@ Server dikelola oleh systemd menggunakan `Type=simple` dengan `screen -DmS` agar
 
 ```
 bedrock-server/
-├── install.sh              Installer satu-perintah: unduh binary, buat systemd service, opsional Playit.gg.
-├── update_bedrock.sh       Skrip pembaruan otomatis binary server dengan backup dan fallback URL.
-├── server.properties       Konfigurasi utama server (port, max player, level name, dll.).
-├── allowlist.json          Daftar pemain yang diizinkan masuk (whitelist).
-├── permissions.json        Pengaturan izin pemain (operator, member, visitor).
-├── packetlimitconfig.json  Batas paket jaringan per koneksi.
-├── profanity_filter.wlist  Daftar kata yang difilter dari chat.
-├── behavior_packs/         Add-on behavior packs.
-├── resource_packs/         Add-on resource packs.
+├── install.sh              Installer satu-perintah: unduh binary, pasang bedrock-manager.sh,
+│                            buat systemd service + logrotate, aktifkan player logger, opsional Playit.gg.
+├── bedrock-manager.sh       CLI manajemen terpadu (start/stop/backup/restore/players/dst).
+│                            Di-symlink ke /usr/local/bin/bedrock saat instalasi.
+├── update_bedrock.sh        Skrip pembaruan otomatis binary server dengan backup dan fallback URL.
+│                            Dipanggil langsung atau lewat 'bedrock update'.
+├── server.properties        Konfigurasi utama server (port, max player, level name, dll.).
+├── allowlist.json           Daftar pemain yang diizinkan masuk (whitelist).
+├── permissions.json         Pengaturan izin pemain (operator, member, visitor).
+├── packetlimitconfig.json   Batas paket jaringan per koneksi.
+├── profanity_filter.wlist   Daftar kata yang difilter dari chat.
+├── behavior_packs/          Add-on behavior packs.
+├── resource_packs/          Add-on resource packs.
 ├── config/
-│   └── default/            Konfigurasi eksperimen bawaan server.
-├── data/                   Data server statis.
-└── definitions/            Definisi entitas dan biome.
+│   └── default/             Konfigurasi eksperimen bawaan server.
+├── data/                    Data server statis.
+└── definitions/             Definisi entitas dan biome.
 ```
 
-Direktori `worlds/`, `worlds_backup/`, file binary `bedrock_server`, arsip `.zip`, dan direktori development packs dikecualikan dari version control melalui `.gitignore`.
+Direktori/file berikut dibuat secara otomatis saat runtime (bukan bagian dari version control, lihat `.gitignore`):
+
+| Path | Dibuat oleh | Keterangan |
+|---|---|---|
+| `worlds/`, `worlds_backup/` | server / manual | Data dunia. Sangat dinamis, tidak boleh masuk Git. |
+| `bedrock_server`, `*.zip` | `install.sh` / `update_bedrock.sh` | Binary dan arsip unduhan. |
+| `player-logger.sh` | `bedrock logger install` | Digenerate otomatis dari `bedrock-manager.sh`, jangan diedit manual. |
+| `player_activity.log` | `bedrock-player-logger.service` | Riwayat join/leave pemain, permanen (lihat bagian [Log Aktivitas Pemain](#log-aktivitas-pemain)). |
+| `${SERVER_DIR}-backup/` | `bedrock backup` | Direktori saudara di luar `SERVER_DIR`, berisi seluruh backup bertimestamp. |
 
 ---
 
@@ -89,6 +111,7 @@ Direktori `worlds/`, `worlds_backup/`, file binary `bedrock_server`, arsip `.zip
 | Sistem Operasi | Debian 11+ / Ubuntu 20.04+ | Library sistem yang kompatibel diperlukan untuk binary Bedrock. |
 | Akses | `root` atau `sudo` | Diperlukan untuk menulis ke `/opt`, `/etc/systemd`, dan `/var/log`. |
 | `curl`, `wget`, `unzip`, `screen` | Versi paket apt terbaru | Dependensi runtime untuk installer, pengunduhan binary, dan manajemen proses. |
+| `bash` >= 4 | Bawaan Debian/Ubuntu | Diperlukan oleh `bedrock-manager.sh` (regex bawaan bash, associative array pada beberapa fungsi). |
 | Koneksi internet | Aktif saat instalasi dan update | Diperlukan untuk mengunduh binary Bedrock dan paket Playit.gg. |
 
 Instal seluruh dependensi sekaligus:
@@ -113,6 +136,8 @@ sudo apt update && sudo apt install -y curl wget unzip screen
 curl -fsSL https://raw.githubusercontent.com/hilmyah/bedrock-server/main/install.sh | sudo bash
 ```
 
+Instalasi ini otomatis: memasang binary server, `update_bedrock.sh`, `bedrock-manager.sh` (symlink `bedrock`), systemd service, logrotate untuk log konsol, dan mengaktifkan player activity logger.
+
 Untuk instalasi sekaligus dengan Playit.gg:
 
 ```bash
@@ -124,6 +149,7 @@ Opsi installer:
 | Opsi | Keterangan |
 |---|---|
 | `--with-playit` | Instal dan konfigurasi Playit.gg secara otomatis. |
+| `--skip-playerlog` | Jangan aktifkan player activity logger otomatis (bisa dipasang belakangan dengan `bedrock logger install`). |
 | `--port=PORT` | Tentukan port UDP server (default: `19132`). |
 | `--dir=PATH` | Tentukan direktori instalasi (default: `/opt/bedrock-server`). |
 
@@ -229,56 +255,135 @@ systemctl enable bedrock
 systemctl start bedrock
 ```
 
----
-
-## Manajemen dan Operasional
-
-### Perintah Layanan
+Pasang `bedrock-manager.sh` secara manual (jika tidak memakai `install.sh`):
 
 ```bash
-sudo systemctl start bedrock
-sudo systemctl stop bedrock
-sudo systemctl status bedrock
-sudo journalctl -u bedrock -f
+curl -fsSL https://raw.githubusercontent.com/hilmyah/bedrock-server/main/bedrock-manager.sh \
+  -o /opt/bedrock-server/bedrock-manager.sh
+chmod +x /opt/bedrock-server/bedrock-manager.sh
+sudo /opt/bedrock-server/bedrock-manager.sh self-install
+sudo bedrock logger install
 ```
 
-### Konsol Interaktif
+---
+
+## Manajemen Terpadu (bedrock-manager.sh)
+
+Setelah instalasi, seluruh operasi harian dilakukan lewat perintah `bedrock` (symlink ke `bedrock-manager.sh`). Skrip ini bersifat universal: path server, nama screen, dan nama service TIDAK di-hardcode, melainkan diresolusi berurutan dari environment variable → `/etc/bedrock-manager/manager.conf` → introspeksi `systemctl show` pada unit yang terpasang → nilai default. Ini berarti skrip yang sama bekerja di instalasi manapun yang mengikuti pola `install.sh` di atas, tanpa perlu diedit.
+
+### Kontrol Service
 
 | Perintah | Fungsi |
 |---|---|
-| `screen -r mc-server` | Masuk ke konsol server. |
-| `screen -ls` | Lihat semua sesi screen aktif. |
-| `Ctrl+A, D` | Keluar dari konsol tanpa menghentikan server. |
+| `bedrock start` / `stop` / `restart` | Kontrol systemd service `bedrock`. |
+| `bedrock status` | Status service, versi terpasang, RAM (RSS) proses `bedrock_server` yang sebenarnya, ukuran `worlds/`, dan ringkasan log pemain. |
+| `bedrock console` | Attach ke sesi screen (`Ctrl+A` lalu `D` untuk keluar tanpa menghentikan server). |
+| `bedrock send "<perintah>"` | Kirim satu perintah in-game langsung tanpa perlu attach ke konsol, misal `bedrock send "say Server restart 5 menit lagi"`. |
+| `bedrock online` | Kirim `list` ke konsol dan baca hasilnya dari log. |
+| `bedrock version` | Bandingkan versi terpasang vs versi terbaru di server Mojang, **tanpa** menghentikan atau mengunduh apa pun. |
 
-### Lokasi Log
+> **Catatan jujur soal keterbatasan:** Bedrock Dedicated Server tidak memiliki RCON bawaan. `send` dan `online` bekerja dengan menyuntikkan teks ke sesi `screen`, bukan lewat protokol terstruktur. Jika sesi screen tidak ditemukan (server mati atau nama screen tidak cocok), perintah akan gagal dengan pesan eksplisit — bukan output yang dipalsukan.
 
-| File | Isi |
+### Konfigurasi Override (opsional)
+
+Jika direktori/nama service berbeda dari default, isi `/etc/bedrock-manager/manager.conf`:
+
+```bash
+SERVER_DIR="/opt/bedrock-server"
+SCREEN_NAME="mc-server"
+SERVICE_NAME="bedrock"
+LOG_FILE="/var/log/bedrock-server.log"
+PLAYER_LOG="/opt/bedrock-server/player_activity.log"
+BACKUP_DIR="/opt/bedrock-server-backup"
+```
+
+Atau lewat environment variable dengan prefiks `BEDROCK_` (mis. `BEDROCK_SERVER_DIR`, `BEDROCK_BACKUP_RETAIN`).
+
+---
+
+## Backup dan Restore
+
+Backup **tidak lagi terikat pada proses update**. Jalankan kapan pun:
+
+```bash
+bedrock backup                      # hanya server.properties, allowlist.json, permissions.json
+bedrock backup --worlds             # + folder worlds, live snapshot jika server berjalan
+bedrock backup --worlds --stop      # + folder worlds, server dihentikan dulu (paling aman)
+bedrock backup --worlds --debug     # sama seperti di atas, plus log mentah konsol untuk diagnosis
+```
+
+### Mekanisme Live Snapshot (tanpa `--stop`)
+
+Saat server berjalan dan `--stop` tidak diberikan, backup worlds memakai mekanisme resmi Bedrock Dedicated Server:
+
+1. `save hold` — server bersiap, kembali segera (asinkron).
+2. `save query` — dipanggil berulang (maks. 24 kali, jeda 5 detik) sampai server membalas `Data saved. Files are now ready to be copied.` beserta daftar `path:panjang_byte`.
+3. Setiap file pada daftar tersebut disalin dan **dipotong (truncate)** persis sesuai panjang byte yang dilaporkan — bukan sekadar `cp -r` mentah — sehingga hasilnya tetap konsisten meski server terus menulis data di background.
+4. `save resume` — selalu dikirim di akhir, termasuk saat terjadi timeout/error (dijamin lewat `trap`), agar dunia tidak "tertahan".
+
+Jika server tidak membalas dalam batas waktu, proses **dibatalkan dengan pesan eksplisit** (bukan backup yang dipalsukan sebagai berhasil). Untuk kepastian 100%, gunakan `--stop`, yang menghentikan server sesaat sebelum menyalin `worlds/` lalu menjalankannya kembali.
+
+### Melihat dan Memulihkan Backup
+
+```bash
+bedrock backup-list
+```
+```
+TIMESTAMP            UKURAN     ISI
+20260923_140000      812M       allowlist.json,permissions.json,server.properties,worlds
+```
+
+```bash
+bedrock restore 20260923_140000                  # pulihkan worlds + config sekaligus
+bedrock restore 20260923_140000 --worlds         # hanya worlds (server dihentikan lalu dijalankan lagi otomatis)
+bedrock restore 20260923_140000 --configs        # hanya config; jika server aktif, allowlist/permissions
+                                                  # dimuat ulang langsung (whitelist reload, permissions reload)
+                                                  # tanpa perlu restart
+```
+
+### Retensi Backup
+
+Secara default backup disimpan **selamanya** (`BACKUP_DIR`, sejajar dengan `SERVER_DIR`). Jika ingin membatasi jumlahnya, set environment variable `BEDROCK_BACKUP_RETAIN` (misal `=10` untuk menyimpan 10 backup terakhir saja). Batasan ini **tidak berlaku** untuk `player_activity.log` — log pemain selalu permanen terlepas dari pengaturan ini.
+
+---
+
+## Log Aktivitas Pemain
+
+`bedrock logger install` memasang service `bedrock-player-logger` yang memantau `/var/log/bedrock-server.log` secara terus-menerus (`tail -F`, tahan terhadap rotasi/restart) dan mencatat setiap event `Player connected:` / `Player disconnected:` ke:
+
+```
+${SERVER_DIR}/player_activity.log
+```
+
+dengan format append-only:
+
+```
+2026-09-23 14:03:11|JOIN|Hilmy|2535419xxxxxxxxx
+2026-09-23 15:41:02|LEAVE|Hilmy|2535419xxxxxxxxx
+```
+
+**Retensi tidak terbatas.** Tidak ada logrotate, tidak ada auto-trim berdasarkan usia entri (berbeda dengan `/var/log/bedrock-server.log` yang dirotasi mingguan oleh `install_logrotate`). Satu-satunya cara mengulang riwayat dari awal adalah menghapus file ini secara manual — `bedrock logger uninstall` sengaja **tidak** menghapusnya.
+
+| Perintah | Fungsi |
 |---|---|
-| `/var/log/bedrock-server.log` | Output konsol server secara berkelanjutan. |
-| `/var/log/bedrock-update.log` | Riwayat setiap proses pembaruan. |
+| `bedrock logger install` | Pasang & aktifkan service logger (berjalan otomatis, `Restart=always`). |
+| `bedrock logger uninstall` | Lepas service. Data historis tetap disimpan. |
+| `bedrock logger status` | Status service + 5 entri terakhir. |
+| `bedrock players [n]` | `n` baris terakhir (default 50). |
+| `bedrock players today` | Aktivitas hari ini saja. |
+| `bedrock players search <nama>` | Seluruh riwayat satu nama pemain. |
+| `bedrock players count` | Jumlah entri & ukuran file. |
+| `bedrock players stats` | Total sesi & total lama bermain (join→leave) per pemain, terurut dari yang terlama. |
 
 ---
 
 ## Pembaruan
 
 ```bash
-sudo bedrock-update
+bedrock update
 ```
 
-Atau secara eksplisit:
-
-```bash
-sudo /opt/bedrock-server/update_bedrock.sh
-```
-
-### Pemasangan Alias (Instalasi Manual)
-
-Jika tidak menggunakan `install.sh`, buat symlink agar perintah dapat dieksekusi secara global:
-
-```bash
-sudo chmod +x /opt/bedrock-server/update_bedrock.sh
-sudo ln -sf /opt/bedrock-server/update_bedrock.sh /usr/local/bin/bedrock-update
-```
+Perintah ini meneruskan langsung ke `update_bedrock.sh` di `SERVER_DIR` (dapat juga dipanggil langsung: `sudo bedrock-update` atau `sudo /opt/bedrock-server/update_bedrock.sh`). Karena backup kini sudah mandiri (lihat [Backup dan Restore](#backup-dan-restore)), langkah backup di dalam `update_bedrock.sh` hanya menyalin tiga file konfigurasi kecil sebagai jaring pengaman sebelum overwrite binary — bukan pengganti `bedrock backup --worlds`.
 
 ### Opsi Update
 
@@ -287,12 +392,18 @@ sudo ln -sf /opt/bedrock-server/update_bedrock.sh /usr/local/bin/bedrock-update
 | *(tanpa opsi)* | Cek dan update jika ada versi baru. |
 | `--force` | Paksa instalasi ulang meskipun versi sama. |
 | `--no-restart` | Jangan jalankan ulang server setelah update. |
-| `--backup-worlds` | Backup direktori `worlds` sebelum update. |
+| `--backup-worlds` | Backup direktori `worlds` sebelum update (opsional; setara dengan menjalankan `bedrock backup --worlds --stop` sebelum update). |
 
 Contoh penggunaan dengan opsi:
 
 ```bash
 sudo bedrock-update --backup-worlds --force
+```
+
+Cek versi tanpa side effect apa pun:
+
+```bash
+bedrock version
 ```
 
 ### Mekanisme Kerja Skrip
@@ -328,6 +439,16 @@ Skrip menggunakan sistem fallback 3 lapis: endpoint API JSON internal Minecraft,
 sudo bedrock-update --force
 ```
 
+**`bedrock backup --worlds` macet lama lalu menampilkan peringatan konsistensi**
+
+Server belum membalas `Data saved. Files are now ready to be copied.` dalam ~2 menit (24 percobaan). Diagnosis dengan:
+
+```bash
+bedrock backup --worlds --debug
+```
+
+Ini menampilkan output mentah konsol pada setiap percobaan `save query`, sehingga terlihat jelas apakah server merespons dengan format berbeda atau tidak merespons sama sekali. Jika deteksi tetap gagal, gunakan `bedrock backup --worlds --stop` yang tidak bergantung pada parsing log sama sekali.
+
 **Server crash saat startup**
 
 ```bash
@@ -346,9 +467,15 @@ screen -ls
 screen -d mc-server && screen -r mc-server
 ```
 
+Atau langsung: `bedrock console` (menampilkan pesan eksplisit jika sesi tidak ditemukan, bukan macet tanpa keterangan).
+
 **Server terdeteksi mati padahal sebenarnya berjalan**
 
 Pastikan menggunakan `Type=simple` dan `screen -DmS` (huruf besar `D`) pada konfigurasi systemd. Konfigurasi lama `Type=forking` dengan `screen -dmS` menyebabkan systemd kehilangan jejak PID sehingga melaporkan status yang tidak akurat.
+
+**`bedrock status` menampilkan penggunaan memori yang terasa terlalu kecil**
+
+`MainPID` yang dilacak systemd untuk unit ini adalah proses `screen` pembungkus (~beberapa MB), bukan proses `bedrock_server` yang sebenarnya (dijalankan sebagai cucu proses lewat `bash -c`). `bedrock-manager.sh` versi terkini mencari PID `bedrock_server` secara langsung lewat `pgrep` untuk pengukuran RSS yang akurat; pastikan menggunakan versi terbaru skrip ini.
 
 ---
 
