@@ -10,14 +10,6 @@
 #   pemasangan/pengelolaan player activity logger permanen (join/leave),
 #   serta pembacaan riwayat pemain.
 #
-# Sifat "universal":
-#   Skrip TIDAK meng-hardcode path. Resolusi konfigurasi mengikuti urutan:
-#     1. Environment variable (BEDROCK_SERVER_DIR, BEDROCK_SCREEN_NAME, dst.)
-#     2. File konfigurasi opsional /etc/bedrock-manager/manager.conf
-#     3. Introspeksi unit systemd yang sedang terpasang (systemctl show)
-#     4. Nilai default (/opt/bedrock-server, screen "mc-server", service "bedrock")
-#   Karena itu skrip ini dapat dijalankan di server manapun yang memakai
-#   pola instalasi install.sh dari repositori acuan, tanpa modifikasi.
 #
 # Prasyarat: bash >= 4, systemd, screen, coreutils (ps, du, tail, sed, grep)
 #
@@ -61,21 +53,6 @@
 #   self-install                  Symlink skrip ini ke /usr/local/bin/bedrock
 #   help                          Tampilkan bantuan ini
 #
-# Catatan penting (bukan asumsi tersembunyi, dinyatakan eksplisit):
-#   - Bedrock Dedicated Server tidak memiliki RCON bawaan. Perintah "online"
-#     dan "send" bekerja dengan mengirim teks ke sesi screen server, BUKAN
-#     melalui protokol terstruktur. Jika screen session tidak ditemukan,
-#     perintah akan gagal dengan pesan eksplisit, bukan output palsu.
-#   - "backup --worlds" (tanpa --stop) memakai mekanisme resmi save hold/query/
-#     resume: file disalin dan DIPOTONG (truncate) sesuai panjang byte yang
-#     dilaporkan server lewat 'save query', bukan sekadar cp -r mentah, agar
-#     hasilnya konsisten meski server terus menulis data di background.
-#     Jika server tidak mengonfirmasi "Data saved." dalam 24 percobaan (~2
-#     menit), proses dibatalkan dengan pesan eksplisit (bukan backup palsu).
-#     Alternatif yang dijamin konsisten: backup --worlds --stop.
-#   - BEDROCK_BACKUP_RETAIN (env var, default 0 = simpan selamanya) membatasi
-#     jumlah backup lama yang disimpan bila diisi > 0. Tidak memengaruhi
-#     player_activity.log, yang selalu permanen tanpa rotasi.
 # =============================================================================
 
 set -uo pipefail
@@ -102,37 +79,49 @@ log() {
 CONF_FILE="/etc/bedrock-manager/manager.conf"
 
 resolve_config() {
-    SERVER_DIR="${BEDROCK_SERVER_DIR:-}"
-    SCREEN_NAME="${BEDROCK_SCREEN_NAME:-}"
-    SERVICE_NAME="${BEDROCK_SERVICE_NAME:-bedrock}"
-    LOG_FILE="${BEDROCK_LOG_FILE:-}"
-    PLAYER_LOG="${BEDROCK_PLAYER_LOG:-}"
-    BACKUP_DIR="${BEDROCK_BACKUP_DIR:-}"
+    SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""
+    LOG_FILE=""; PLAYER_LOG=""; BACKUP_DIR=""; BACKUP_RETAIN=""
 
+    # 3) File konfigurasi (prioritas di bawah env var, di atas systemd/default)
     if [ -f "$CONF_FILE" ]; then
         # shellcheck source=/dev/null
         source "$CONF_FILE"
     fi
 
+    # SERVICE_NAME diselesaikan lebih dulu (default -> env var) karena dipakai
+    # sebagai kunci pencarian unit systemd untuk SERVER_DIR/SCREEN_NAME di bawah.
+    [ -z "$SERVICE_NAME" ] && SERVICE_NAME="bedrock"
+    [ -n "${BEDROCK_SERVICE_NAME:-}" ] && SERVICE_NAME="$BEDROCK_SERVICE_NAME"
+
+    # SERVER_DIR: systemd (2) -> default (1) -> CONF_FILE sudah diterapkan di
+    # atas kalau ada -> env var (4) paling akhir.
     if [ -z "$SERVER_DIR" ]; then
         SERVER_DIR=$(systemctl show -p WorkingDirectory --value "${SERVICE_NAME}.service" 2>/dev/null || true)
     fi
     [ -z "$SERVER_DIR" ] && SERVER_DIR="/opt/bedrock-server"
+    [ -n "${BEDROCK_SERVER_DIR:-}" ] && SERVER_DIR="$BEDROCK_SERVER_DIR"
 
+    # SCREEN_NAME: pola yang sama.
     if [ -z "$SCREEN_NAME" ]; then
         local execstart
         execstart=$(systemctl show -p ExecStart --value "${SERVICE_NAME}.service" 2>/dev/null || true)
         SCREEN_NAME=$(echo "$execstart" | grep -oE '\-DmS[[:space:]]+[^[:space:]]+' | awk '{print $2}')
     fi
     [ -z "$SCREEN_NAME" ] && SCREEN_NAME="mc-server"
+    [ -n "${BEDROCK_SCREEN_NAME:-}" ] && SCREEN_NAME="$BEDROCK_SCREEN_NAME"
 
-    [ -z "$LOG_FILE" ] && LOG_FILE="/var/log/bedrock-server.log"
-    [ -z "$PLAYER_LOG" ] && PLAYER_LOG="${SERVER_DIR}/player_activity.log"
-    [ -z "$BACKUP_DIR" ] && BACKUP_DIR="${SERVER_DIR}-backup"
-    # BACKUP_RETAIN=0 (default) berarti backup config/worlds disimpan selamanya,
-    # sama seperti player_activity.log. Set BEDROCK_BACKUP_RETAIN=N (N>0) jika
-    # ingin membatasi jumlah backup yang disimpan (bukan berdasarkan waktu).
-    BACKUP_RETAIN="${BEDROCK_BACKUP_RETAIN:-0}"
+    # Variabel turunan: dihitung dari SERVER_DIR yang SUDAH final di atas,
+    # lalu env var (kalau ada) tetap menang paling akhir atas nilai turunan.
+    [ -z "$LOG_FILE" ]      && LOG_FILE="/var/log/bedrock-server.log"
+    [ -z "$PLAYER_LOG" ]    && PLAYER_LOG="${SERVER_DIR}/player_activity.log"
+    [ -z "$BACKUP_DIR" ]    && BACKUP_DIR="${SERVER_DIR}-backup"
+    [ -z "$BACKUP_RETAIN" ] && BACKUP_RETAIN=0
+
+    [ -n "${BEDROCK_LOG_FILE:-}" ]      && LOG_FILE="$BEDROCK_LOG_FILE"
+    [ -n "${BEDROCK_PLAYER_LOG:-}" ]    && PLAYER_LOG="$BEDROCK_PLAYER_LOG"
+    [ -n "${BEDROCK_BACKUP_DIR:-}" ]    && BACKUP_DIR="$BEDROCK_BACKUP_DIR"
+    [ -n "${BEDROCK_BACKUP_RETAIN:-}" ] && BACKUP_RETAIN="$BEDROCK_BACKUP_RETAIN"
+
     UPDATE_SCRIPT="${SERVER_DIR}/update_bedrock.sh"
 }
 
@@ -328,28 +317,7 @@ cmd_online() {
     echo "$result"
 }
 
-# -----------------------------------------------------------------------------
-# BACKUP WORLDS LIVE — mekanisme resmi save hold / save query / save resume
-# -----------------------------------------------------------------------------
-# Referensi (diverifikasi, bukan asumsi):
-#   save hold   -> server bersiap backup, return segera (asinkron)
-#   save query  -> dipanggil berulang; saat siap, mengembalikan konfirmasi
-#                  "Data saved. Files are now ready to be copied." beserta
-#                  daftar "path:panjang_byte" (dipisah koma) yang HARUS
-#                  disalin dan DIPOTONG (truncate) sesuai panjang tsb agar
-#                  konsisten meski file terus ditulis di background.
-#   save resume -> menandai backup selesai, server lanjut normal.
-#   Sumber: minecraft.fandom.com/wiki/Commands/save, dokumentasi command BDS.
-#
-# Perbaikan dari versi sebelumnya:
-#   - Sebelumnya hanya mendeteksi kata "saved" secara longgar lalu men-cp -r
-#     seluruh folder worlds tanpa truncation -> TIDAK benar-benar konsisten,
-#     berpotensi salah deteksi karena autosave berkala juga memuat kata
-#     "saved". Versi ini mem-parsing daftar file:panjang dari 'save query'
-#     dan memotong tiap file sesuai panjang yang dilaporkan server, sesuai
-#     mekanisme resmi.
-#   - 'save resume' sekarang dijamin terkirim lewat trap RETURN, walau
-#     terjadi error/timeout di tengah proses (mencegah world "tertahan").
+
 live_backup_worlds() {
     local dest="$1" debug="${2:-false}"
     mkdir -p "$dest"
@@ -832,6 +800,19 @@ main() {
         players)      cmd_players "$@" ;;
         logs)         cmd_logs "$@" ;;
         self-install) cmd_selfinstall ;;
+        _print-config)
+            # Perintah tersembunyi, tidak didokumentasikan di help publik --
+            # bantuan diagnosis urutan resolusi konfigurasi (env var > CONF_FILE
+            # > systemd > default) tanpa perlu instalasi server nyata.
+            echo "CONF_FILE      = $CONF_FILE"
+            echo "SERVICE_NAME   = $SERVICE_NAME"
+            echo "SERVER_DIR     = $SERVER_DIR"
+            echo "SCREEN_NAME    = $SCREEN_NAME"
+            echo "LOG_FILE       = $LOG_FILE"
+            echo "PLAYER_LOG     = $PLAYER_LOG"
+            echo "BACKUP_DIR     = $BACKUP_DIR"
+            echo "BACKUP_RETAIN  = $BACKUP_RETAIN"
+            ;;
         help|-h|--help) print_help ;;
         *)
             log ERROR "Perintah tidak dikenal: $command"
