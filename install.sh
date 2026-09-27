@@ -33,7 +33,13 @@ for arg in "$@"; do
     case "$arg" in
         --with-playit)   WITH_PLAYIT=true ;;
         --skip-playerlog) SKIP_PLAYERLOG=true ;;
-        --port=*)        PORT="${arg#*=}" ;;
+        --port=*)
+            PORT="${arg#*=}"
+            if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65534 ]; then
+                echo -e "${RED}[ERROR]${RESET} --port harus angka 1-65534 (server-portv6 dipakai = port+1, harus <=65535)."
+                exit 1
+            fi
+            ;;
         --dir=*)         SERVER_DIR="${arg#*=}" ;;
         --help|-h)
             echo "Penggunaan: install.sh [opsi]"
@@ -41,7 +47,7 @@ for arg in "$@"; do
             echo "Opsi:"
             echo "  --with-playit     Instal dan konfigurasi Playit.gg tunnel"
             echo "  --skip-playerlog  Jangan aktifkan player activity logger otomatis"
-            echo "  --port=PORT       Port UDP server (default: 19132)"
+            echo "  --port=PORT       Port UDP server IPv4 (default: 19132). server-portv6 ikut diset ke PORT+1."
             echo "  --dir=PATH        Direktori instalasi (default: /opt/bedrock-server)"
             exit 0
             ;;
@@ -154,9 +160,15 @@ install_server() {
     chmod +x bedrock_server
 
     log INFO "Memasang file konfigurasi dari repositori..."
-    # Unduh konfigurasi default dari repositori
+    # Unduh konfigurasi default dari repositori. --fail wajib: tanpa ini,
+    # curl menganggap respons HTTP 404 sebagai sukses (exit 0) dan menulis
+    # badan halaman error ("404: Not Found") sebagai isi file -- terverifikasi
+    # langsung terhadap raw.githubusercontent.com. Kegagalan di sini TIDAK
+    # fatal: bedrock_server resmi membuat server.properties/allowlist.json/
+    # permissions.json dengan default Mojang sendiri saat pertama kali
+    # dijalankan jika file tersebut belum ada.
     for config_file in server.properties allowlist.json permissions.json; do
-        if curl --silent --max-time 10 -o "/tmp/${config_file}" \
+        if curl --fail --silent --max-time 10 -o "/tmp/${config_file}" \
             "${REPO_RAW}/${config_file}" 2>/dev/null; then
             if [ ! -f "${SERVER_DIR}/${config_file}" ]; then
                 cp "/tmp/${config_file}" "${SERVER_DIR}/${config_file}"
@@ -164,6 +176,9 @@ install_server() {
             else
                 log WARN "Melewati $config_file (sudah ada)."
             fi
+        else
+            log WARN "Gagal mengunduh $config_file dari repositori (dilewati, tidak fatal)."
+            log WARN "bedrock_server akan membuat default Mojang sendiri saat pertama kali dijalankan."
         fi
     done
 }
@@ -171,9 +186,18 @@ install_server() {
 install_update_script() {
     log STEP "Memasang Skrip Update Otomatis"
 
-    curl --silent --max-time 30 \
+    # --fail wajib (lihat catatan di install_server): tanpa ini, HTTP 404
+    # ditulis sebagai isi file dan dianggap sukses. Ini komponen inti (bukan
+    # config opsional seperti server.properties), jadi kegagalan HARUS fatal
+    # dengan pesan eksplisit -- bukan diam-diam lanjut lalu 'bedrock-update'
+    # gagal dieksekusi tanpa penjelasan.
+    if ! curl --fail --silent --show-error --max-time 30 \
         -o "${SERVER_DIR}/update_bedrock.sh" \
-        "${REPO_RAW}/update_bedrock.sh"
+        "${REPO_RAW}/update_bedrock.sh"; then
+        log ERROR "Gagal mengunduh update_bedrock.sh dari ${REPO_RAW}/update_bedrock.sh"
+        log ERROR "Instalasi dibatalkan -- skrip update adalah komponen inti, bukan opsional."
+        exit 1
+    fi
 
     chmod +x "${SERVER_DIR}/update_bedrock.sh"
     log INFO "Skrip update dipasang: ${SERVER_DIR}/update_bedrock.sh"
@@ -186,9 +210,13 @@ install_update_script() {
 install_manager_script() {
     log STEP "Memasang Skrip Manajemen Terpadu (bedrock-manager.sh)"
 
-    curl --silent --max-time 30 \
+    if ! curl --fail --silent --show-error --max-time 30 \
         -o "${SERVER_DIR}/bedrock-manager.sh" \
-        "${REPO_RAW}/bedrock-manager.sh"
+        "${REPO_RAW}/bedrock-manager.sh"; then
+        log ERROR "Gagal mengunduh bedrock-manager.sh dari ${REPO_RAW}/bedrock-manager.sh"
+        log ERROR "Instalasi dibatalkan -- CLI 'bedrock' adalah komponen inti, bukan opsional."
+        exit 1
+    fi
 
     chmod +x "${SERVER_DIR}/bedrock-manager.sh"
     ln -sf "${SERVER_DIR}/bedrock-manager.sh" /usr/local/bin/bedrock
@@ -280,6 +308,34 @@ install_playit() {
     log WARN "Jalankan 'playit' untuk mendapatkan link klaim tunnel Anda."
 }
 
+# Sebelumnya variabel PORT hanya dipakai di pesan ringkasan akhir, TIDAK
+# pernah benar-benar ditulis ke server.properties -- --port=PORT dari
+# pengguna diam-diam tidak berpengaruh. Fungsi ini menulis server-port dan
+# server-portv6 (=PORT+1, mengikuti pola gap +1 pada default resmi Mojang
+# 19132/19133) langsung ke server.properties, harus dipanggil SEBELUM
+# 'systemctl start bedrock.service' pertama kali agar berlaku tanpa restart.
+configure_port() {
+    local props="${SERVER_DIR}/server.properties"
+    if [ ! -f "$props" ]; then
+        log WARN "server.properties belum ada -- opsi --port=${PORT} tidak diterapkan."
+        log WARN "Set manual (server-port, server-portv6) setelah server pertama kali dijalankan."
+        return 0
+    fi
+
+    local portv6=$((PORT + 1))
+    if grep -q '^server-port=' "$props"; then
+        sed -i "s/^server-port=.*/server-port=${PORT}/" "$props"
+    else
+        echo "server-port=${PORT}" >> "$props"
+    fi
+    if grep -q '^server-portv6=' "$props"; then
+        sed -i "s/^server-portv6=.*/server-portv6=${portv6}/" "$props"
+    else
+        echo "server-portv6=${portv6}" >> "$props"
+    fi
+    log INFO "server-port=${PORT}, server-portv6=${portv6} diterapkan ke server.properties."
+}
+
 # -----------------------------------------------------------------------------
 # EKSEKUSI UTAMA
 # -----------------------------------------------------------------------------
@@ -298,6 +354,7 @@ check_root
 check_os
 install_dependencies
 install_server
+configure_port
 install_update_script
 install_manager_script
 install_systemd_service
