@@ -152,6 +152,15 @@ screen_exists() {
     screen -list 2>/dev/null | grep -q "\.${SCREEN_NAME}[[:space:]]"
 }
 
+# Mencegah 'backup', 'restore', 'update', dan 'restart' berjalan bersamaan --
+# kalau dua di antaranya jalan bareng (misal cron backup vs restore manual di
+# terminal lain), keduanya bisa saling menimpa worlds/ atau BACKUP_DIR di
+# tengah jalan. fd 200 sengaja dibiarkan terbuka sepanjang hidup proses ini,
+# termasuk melewati 'exec bash update_bedrock.sh' pada cmd_update -- exec
+# mewarisi file descriptor yang terbuka (sudah diuji empiris: lock tetap
+# terpegang sepanjang proses update berjalan, bukan cuma sesaat sebelum
+# exec, dan otomatis terlepas begitu proses ini exit dengan cara apa pun).
+# 'logs', 'players', 'status' TIDAK memanggil ini karena murni baca.
 acquire_lock() {
     mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
     exec 200>"$LOCK_FILE" || {
@@ -560,6 +569,16 @@ cmd_backup_list() {
     done
 }
 
+# PERBAIKAN (atomik + rollback lokal): versi sebelumnya melakukan
+# `rm -rf worlds` LEBIH DULU baru `cp -r` data restore. Kalau cp gagal di
+# tengah jalan (disk penuh, terhenti paksa), world lama sudah hilang dan
+# yang tersisa cuma salinan setengah jadi. Sekarang data restore disalin ke
+# staging dulu (worlds/ asli sama sekali tidak disentuh selama proses ini),
+# diverifikasi tidak kosong, baru DITUKAR lewat dua 'mv' (operasi rename,
+# bukan copy — sangat singkat, risiko gagal di tengah jalan jauh lebih
+# kecil dibanding menyalin ratusan MB data). worlds/ lama TIDAK dihapus,
+# hanya di-rename ke worlds.before-restore-<timestamp> sebagai rollback
+# lokal manual kalau ternyata restore yang dipilih salah.
 restore_worlds_atomic() {
     local src="$1" ts="$2"
     local worlds_dir="${SERVER_DIR}/worlds"
@@ -841,25 +860,41 @@ cmd_players() {
             echo -e "${BOLD}Ukuran file:${RESET} $(du -h "$PLAYER_LOG" | cut -f1)"
             ;;
         stats)
-            printf "%-24s %-8s %s\n" "PEMAIN" "SESI" "TOTAL_WAKTU"
+            # Key: XUID (nama bisa berubah, XUID tetap). Nama yang ditampilkan
+            # adalah nama terakhir yang tercatat untuk XUID tsb. Entri dengan
+            # xuid "unknown" (gagal diekstrak logger) ikut tergabung jadi satu
+            # baris "unknown" -- kasus langka, bukan bug baru.
+            printf "%-24s %-20s %-8s %s\n" "PEMAIN" "XUID" "SESI" "TOTAL_WAKTU"
             awk -F'|' '
-                $2=="JOIN" {
-                    cmd = "date -d \"" $1 "\" +%s"; cmd | getline t; close(cmd)
-                    in_time[$3] = t
-                    sesi[$3]++
+                function days_from_civil(y, m, d,    era, yoe, doy) {
+                    if (m <= 2) y -= 1
+                    era = int((y >= 0 ? y : y - 399) / 400)
+                    yoe = y - era * 400
+                    doy = int((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1
+                    return era * 146097 + (yoe * 365 + int(yoe/4) - int(yoe/100) + doy) - 719468
                 }
-                $2=="LEAVE" && ($3 in in_time) {
-                    cmd = "date -d \"" $1 "\" +%s"; cmd | getline t; close(cmd)
-                    total[$3] += (t - in_time[$3])
-                    delete in_time[$3]
+                function to_epoch(ts,    a, y, mo, d, h, mi, s) {
+                    split(ts, a, "[- :]")
+                    y = a[1]; mo = a[2]; d = a[3]; h = a[4]; mi = a[5]; s = a[6]
+                    return days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s
+                }
+                $2=="JOIN" {
+                    in_time[$4] = to_epoch($1)
+                    sesi[$4]++
+                    name[$4] = $3
+                }
+                $2=="LEAVE" && ($4 in in_time) {
+                    total[$4] += (to_epoch($1) - in_time[$4])
+                    delete in_time[$4]
+                    name[$4] = $3
                 }
                 END {
-                    for (p in sesi) {
-                        d = total[p] + 0
-                        printf "%-24s %-8d %02d:%02d:%02d\n", p, sesi[p], int(d/3600), int((d%3600)/60), int(d%60)
+                    for (x in sesi) {
+                        d = total[x] + 0
+                        printf "%-24s %-20s %-8d %02d:%02d:%02d\n", name[x], x, sesi[x], int(d/3600), int((d%3600)/60), int(d%60)
                     }
                 }
-            ' "$PLAYER_LOG" | sort -k2 -rn
+            ' "$PLAYER_LOG" | sort -k3 -rn
             ;;
         *)
             local n="$sub"
@@ -949,6 +984,11 @@ main() {
             echo "LOCK_FILE      = $LOCK_FILE"
             ;;
         _test-lock-hold)
+            # Perintah tersembunyi untuk diagnosis: memegang lock lewat
+            # acquire_lock() -- fungsi PERSIS yang sama dipakai backup/
+            # restore/update/restart -- selama N detik (default 5), lalu
+            # keluar. Berguna untuk menguji locking tanpa perlu memicu
+            # backup/restore/update sungguhan atau menebak-nebak waktu I/O.
             local hold="${1:-5}"
             acquire_lock
             echo "LOCK_HELD_PID=$$"
