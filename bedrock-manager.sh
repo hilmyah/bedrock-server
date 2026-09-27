@@ -359,10 +359,16 @@ $query_output"
         fi
 
         if echo "$query_output" | grep -q "Data saved."; then
-            file_list=$(echo "$query_output" | sed -n 's/.*Files are now ready to be copied\.[[:space:]]*//p' | tail -n 1)
-            if [ -z "$file_list" ]; then
-                file_list=$(echo "$query_output" | grep -E '^[^: ].*:[0-9]+' | grep -v "Data saved" | tail -n 1)
-            fi
+            # Path pada respons 'save query' SELALU diawali 'worlds/' (nama
+            # direktori tetap dari protokol BDS, terpisah dari level-name yang
+            # bisa dikonfigurasi) dan setiap entri berbentuk 'path:panjang_byte'
+            # dipisah koma. Pola ini dipakai langsung tanpa bergantung pada
+            # posisi baris relatif terhadap pesan "Files are now ready to be
+            # copied." (bisa satu baris atau baris terpisah tergantung versi
+            # server), dan TIDAK memakai batas spasi sebagai pemisah karena
+            # level-name default resminya sendiri mengandung spasi ("Bedrock
+            # level") -- hanya koma yang dipakai sebagai pemisah antar entri.
+            file_list=$(echo "$query_output" | grep -oE 'worlds/[^,]+:[0-9]+(,worlds/[^,]+:[0-9]+)*' | tail -n 1)
             break
         fi
         attempt=$((attempt + 1))
