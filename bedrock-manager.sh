@@ -82,26 +82,20 @@ resolve_config() {
     SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""
     LOG_FILE=""; PLAYER_LOG=""; BACKUP_DIR=""; BACKUP_RETAIN=""
 
-    # 3) File konfigurasi (prioritas di bawah env var, di atas systemd/default)
     if [ -f "$CONF_FILE" ]; then
         # shellcheck source=/dev/null
         source "$CONF_FILE"
     fi
 
-    # SERVICE_NAME diselesaikan lebih dulu (default -> env var) karena dipakai
-    # sebagai kunci pencarian unit systemd untuk SERVER_DIR/SCREEN_NAME di bawah.
     [ -z "$SERVICE_NAME" ] && SERVICE_NAME="bedrock"
     [ -n "${BEDROCK_SERVICE_NAME:-}" ] && SERVICE_NAME="$BEDROCK_SERVICE_NAME"
 
-    # SERVER_DIR: systemd (2) -> default (1) -> CONF_FILE sudah diterapkan di
-    # atas kalau ada -> env var (4) paling akhir.
     if [ -z "$SERVER_DIR" ]; then
         SERVER_DIR=$(systemctl show -p WorkingDirectory --value "${SERVICE_NAME}.service" 2>/dev/null || true)
     fi
     [ -z "$SERVER_DIR" ] && SERVER_DIR="/opt/bedrock-server"
     [ -n "${BEDROCK_SERVER_DIR:-}" ] && SERVER_DIR="$BEDROCK_SERVER_DIR"
 
-    # SCREEN_NAME: pola yang sama.
     if [ -z "$SCREEN_NAME" ]; then
         local execstart
         execstart=$(systemctl show -p ExecStart --value "${SERVICE_NAME}.service" 2>/dev/null || true)
@@ -110,8 +104,6 @@ resolve_config() {
     [ -z "$SCREEN_NAME" ] && SCREEN_NAME="mc-server"
     [ -n "${BEDROCK_SCREEN_NAME:-}" ] && SCREEN_NAME="$BEDROCK_SCREEN_NAME"
 
-    # Variabel turunan: dihitung dari SERVER_DIR yang SUDAH final di atas,
-    # lalu env var (kalau ada) tetap menang paling akhir atas nilai turunan.
     [ -z "$LOG_FILE" ]      && LOG_FILE="/var/log/bedrock-server.log"
     [ -z "$PLAYER_LOG" ]    && PLAYER_LOG="${SERVER_DIR}/player_activity.log"
     [ -z "$BACKUP_DIR" ]    && BACKUP_DIR="${SERVER_DIR}-backup"
@@ -168,9 +160,6 @@ get_current_version() {
     fi
 }
 
-# Metode identik dengan yang dipakai update_bedrock.sh (fallback 3 lapis),
-# diduplikasi di sini secara sengaja agar 'version' murni cek versi tanpa
-# efek samping (tidak stop/download/restart server seperti alur 'update').
 fetch_latest_version_string() {
     local url=""
     url=$(curl -sL https://net-secondary.web.minecraft-services.net/api/v1.0/download/links \
@@ -244,12 +233,6 @@ cmd_status() {
     echo -e "${BOLD}Versi terpasang  :${RESET} $(get_current_version)"
 
     if is_server_running; then
-        # CATATAN PERBAIKAN: MainPID dari systemd untuk unit ini adalah PID
-        # proses 'screen' (karena ExecStart=screen -DmS ...), BUKAN PID
-        # 'bedrock_server' yang sebenarnya (itu adalah cucu proses, dijalankan
-        # lewat 'bash -c' di dalam screen). Mengukur RSS pada MainPID akan
-        # melaporkan memori 'screen' (~beberapa MB), bukan memori server asli.
-        # Di sini PID 'bedrock_server' dicari langsung lewat pgrep.
         local pid
         pid=$(pgrep -f "${SERVER_DIR}/bedrock_server" 2>/dev/null | head -n 1)
         [ -z "$pid" ] && pid=$(pgrep -x bedrock_server 2>/dev/null | head -n 1)
@@ -350,9 +333,7 @@ $query_output"
         fi
 
         if echo "$query_output" | grep -q "Data saved."; then
-            # Kasus 1: daftar file berada pada baris yang sama setelah frasa konfirmasi
             file_list=$(echo "$query_output" | sed -n 's/.*Files are now ready to be copied\.[[:space:]]*//p' | tail -n 1)
-            # Kasus 2: daftar file berada pada baris terpisah setelah "Data saved."
             if [ -z "$file_list" ]; then
                 file_list=$(echo "$query_output" | grep -E '^[^: ].*:[0-9]+' | grep -v "Data saved" | tail -n 1)
             fi
@@ -403,6 +384,16 @@ $query_output"
 # -----------------------------------------------------------------------------
 # BACKUP (independen dari update)
 # -----------------------------------------------------------------------------
+# PERBAIKAN (atomik): versi sebelumnya menulis langsung ke $BACKUP_DIR/$ts dan,
+# kalau live_backup_worlds gagal, hanya mencatat WARN lalu tetap melanjutkan
+# sampai "Backup tersimpan di: ..." — folder gagal-sebagian itu terlihat sah
+# di 'backup-list' padahal isinya tidak lengkap. Sekarang seluruh proses
+# ditulis ke direktori sementara (.tmp-<ts>), diverifikasi (config ada & tidak
+# kosong, worlds berisi minimal satu file jika diminta), dan HANYA di-rename
+# ke nama final bertimestamp kalau semua tahap lolos. Kalau gagal di titik
+# manapun, direktori sementara dihapus lewat trap EXIT (bukan RETURN — exit
+# tidak memicu RETURN, sudah diuji) sehingga tidak pernah ada folder setengah
+# jadi yang tampak seperti backup sukses.
 cmd_backup() {
     check_root
     require_installed
@@ -420,20 +411,46 @@ cmd_backup() {
     done
 
     mkdir -p "$BACKUP_DIR"
-    local ts dest
+    local ts tmp_dest final_dest
     ts=$(date '+%Y%m%d_%H%M%S')
-    dest="$BACKUP_DIR/$ts"
-    mkdir -p "$dest"
+    tmp_dest="$BACKUP_DIR/.tmp-${ts}"
+    final_dest="$BACKUP_DIR/${ts}"
+
+    # Bersihkan sisa temp dari proses sebelumnya yang mungkin pernah crash
+    # (kill -9, mati listrik, dll.) sebelum sempat membersihkan diri sendiri.
+    rm -rf "$tmp_dest"
+    mkdir -p "$tmp_dest"
+
+    local backup_ok=false
+    cleanup_tmp_backup() {
+        if [ "$backup_ok" != true ] && [ -d "$tmp_dest" ]; then
+            log WARN "Backup dibatalkan/gagal — menghapus direktori sementara: $tmp_dest"
+            rm -rf "$tmp_dest"
+        fi
+    }
+    trap cleanup_tmp_backup EXIT
 
     log STEP "Membuat Backup (tanpa menjalankan update)"
 
+    local expected_configs=() copied_configs=()
     for f in server.properties allowlist.json permissions.json; do
         if [ -f "$SERVER_DIR/$f" ]; then
-            cp "$SERVER_DIR/$f" "$dest/$f"
-            log INFO "Backup: $f"
+            expected_configs+=("$f")
+            if cp "$SERVER_DIR/$f" "$tmp_dest/$f"; then
+                copied_configs+=("$f")
+                log INFO "Backup: $f"
+            else
+                log ERROR "Gagal menyalin: $f"
+            fi
         fi
     done
 
+    if [ "${#expected_configs[@]}" -gt 0 ] && [ "${#copied_configs[@]}" -ne "${#expected_configs[@]}" ]; then
+        log ERROR "Backup config tidak lengkap (${#copied_configs[@]}/${#expected_configs[@]} berhasil disalin)."
+        exit 1
+    fi
+
+    local worlds_failed=false
     if [ "$include_worlds" = true ]; then
         if [ ! -d "$SERVER_DIR/worlds" ]; then
             log WARN "Direktori worlds tidak ditemukan, dilewati."
@@ -442,19 +459,55 @@ cmd_backup() {
             local was_running=false
             is_server_running && was_running=true
             [ "$was_running" = true ] && systemctl stop "$SERVICE_NAME"
-            cp -r "$SERVER_DIR/worlds" "$dest/worlds"
+            cp -r "$SERVER_DIR/worlds" "$tmp_dest/worlds"
             [ "$was_running" = true ] && systemctl start "$SERVICE_NAME"
             log INFO "Backup worlds (mode stop) selesai."
         elif is_server_running && screen_exists; then
-            live_backup_worlds "$dest/worlds" "$debug" \
-                || log WARN "Live backup worlds tidak sepenuhnya berhasil. Periksa log di atas."
+            if ! live_backup_worlds "$tmp_dest/worlds" "$debug"; then
+                worlds_failed=true
+                log ERROR "Live backup worlds gagal."
+            fi
         else
-            cp -r "$SERVER_DIR/worlds" "$dest/worlds"
+            cp -r "$SERVER_DIR/worlds" "$tmp_dest/worlds"
             log INFO "Server tidak berjalan, worlds disalin langsung."
         fi
     fi
 
-    log INFO "Backup tersimpan di: $dest"
+    if [ "$worlds_failed" = true ]; then
+        log ERROR "Backup DIBATALKAN karena live backup worlds gagal. Alternatif terjamin: backup --worlds --stop"
+        exit 1
+    fi
+
+    # Verifikasi akhir sebelum dianggap sukses.
+    local verify_failed=false
+    local f
+    for f in "${expected_configs[@]}"; do
+        if [ ! -s "$tmp_dest/$f" ]; then
+            log ERROR "Verifikasi gagal: $f tidak ada atau kosong pada hasil backup."
+            verify_failed=true
+        fi
+    done
+    if [ "$include_worlds" = true ] && [ -d "$SERVER_DIR/worlds" ]; then
+        local file_count
+        file_count=$(find "$tmp_dest/worlds" -type f 2>/dev/null | wc -l)
+        if [ "$file_count" -eq 0 ]; then
+            log ERROR "Verifikasi gagal: folder worlds pada hasil backup kosong."
+            verify_failed=true
+        fi
+    fi
+    if [ "$verify_failed" = true ]; then
+        log ERROR "Backup tidak lolos verifikasi. Backup DIBATALKAN."
+        exit 1
+    fi
+
+    # Semua tahap lolos -> pindahkan dari temp ke nama final bertimestamp.
+    # 'mv' dalam satu filesystem bersifat atomik (rename syscall), jadi tidak
+    # pernah ada jendela waktu di mana nama final ada tapi isinya setengah jadi.
+    mv "$tmp_dest" "$final_dest"
+    backup_ok=true
+    trap - EXIT
+
+    log INFO "Backup tersimpan di: $final_dest"
     prune_backups
 }
 
@@ -509,7 +562,6 @@ cmd_restore() {
             *) log ERROR "Opsi restore tidak dikenal: $arg"; exit 1 ;;
         esac
     done
-    # Tanpa opsi eksplisit, restore keduanya (perilaku default yang aman/jelas).
     if [ "$do_worlds" = false ] && [ "$do_configs" = false ]; then
         do_worlds=true; do_configs=true
     fi
@@ -573,9 +625,6 @@ logger_install() {
 
     cat > "$logger_script" << 'SCRIPT_EOF'
 #!/bin/bash
-# Dibuat otomatis oleh bedrock-manager.sh (logger install). Jangan diedit manual.
-# Menambahkan (append-only) setiap event Player connected/disconnected ke PLAYER_LOG.
-# File PLAYER_LOG tidak pernah dipangkas atau dirotasi oleh skrip ini.
 set -uo pipefail
 
 LOG_FILE="${BEDROCK_LOG_FILE:-/var/log/bedrock-server.log}"
@@ -698,9 +747,6 @@ cmd_players() {
             echo -e "${BOLD}Ukuran file:${RESET} $(du -h "$PLAYER_LOG" | cut -f1)"
             ;;
         stats)
-            # Menjumlahkan durasi tiap sesi (selisih JOIN -> LEAVE berikutnya per
-            # nama) dari seluruh riwayat player_activity.log. Sesi yang belum
-            # ada pasangan LEAVE (server sedang berjalan) tidak dihitung.
             printf "%-24s %-8s %s\n" "PEMAIN" "SESI" "TOTAL_WAKTU"
             awk -F'|' '
                 $2=="JOIN" {
@@ -760,9 +806,6 @@ cmd_selfinstall() {
 # BANTUAN
 # -----------------------------------------------------------------------------
 print_help() {
-    # Mengambil seluruh blok komentar header (baris 2 sampai baris pembatas
-    # "====" TERAKHIR sebelum kode pertama), bukan nomor baris tetap yang
-    # mudah basi ketika header ditambah/dikurangi di kemudian hari.
     local last_line
     last_line=$(awk '
         NR==1 { next }
@@ -801,9 +844,6 @@ main() {
         logs)         cmd_logs "$@" ;;
         self-install) cmd_selfinstall ;;
         _print-config)
-            # Perintah tersembunyi, tidak didokumentasikan di help publik --
-            # bantuan diagnosis urutan resolusi konfigurasi (env var > CONF_FILE
-            # > systemd > default) tanpa perlu instalasi server nyata.
             echo "CONF_FILE      = $CONF_FILE"
             echo "SERVICE_NAME   = $SERVICE_NAME"
             echo "SERVER_DIR     = $SERVER_DIR"
