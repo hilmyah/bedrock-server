@@ -80,7 +80,7 @@ CONF_FILE="/etc/bedrock-manager/manager.conf"
 
 resolve_config() {
     SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""
-    LOG_FILE=""; PLAYER_LOG=""; BACKUP_DIR=""; BACKUP_RETAIN=""
+    LOG_FILE=""; PLAYER_LOG=""; BACKUP_DIR=""; BACKUP_RETAIN=""; LOCK_FILE=""
 
     if [ -f "$CONF_FILE" ]; then
         # shellcheck source=/dev/null
@@ -108,11 +108,13 @@ resolve_config() {
     [ -z "$PLAYER_LOG" ]    && PLAYER_LOG="${SERVER_DIR}/player_activity.log"
     [ -z "$BACKUP_DIR" ]    && BACKUP_DIR="${SERVER_DIR}-backup"
     [ -z "$BACKUP_RETAIN" ] && BACKUP_RETAIN=0
+    [ -z "$LOCK_FILE" ]     && LOCK_FILE="/var/lock/bedrock-manager-${SERVICE_NAME}.lock"
 
     [ -n "${BEDROCK_LOG_FILE:-}" ]      && LOG_FILE="$BEDROCK_LOG_FILE"
     [ -n "${BEDROCK_PLAYER_LOG:-}" ]    && PLAYER_LOG="$BEDROCK_PLAYER_LOG"
     [ -n "${BEDROCK_BACKUP_DIR:-}" ]    && BACKUP_DIR="$BEDROCK_BACKUP_DIR"
     [ -n "${BEDROCK_BACKUP_RETAIN:-}" ] && BACKUP_RETAIN="$BEDROCK_BACKUP_RETAIN"
+    [ -n "${BEDROCK_LOCK_FILE:-}" ]     && LOCK_FILE="$BEDROCK_LOCK_FILE"
 
     UPDATE_SCRIPT="${SERVER_DIR}/update_bedrock.sh"
 }
@@ -148,6 +150,20 @@ require_running() {
 
 screen_exists() {
     screen -list 2>/dev/null | grep -q "\.${SCREEN_NAME}[[:space:]]"
+}
+
+acquire_lock() {
+    mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
+    exec 200>"$LOCK_FILE" || {
+        log ERROR "Tidak dapat membuka file lock: $LOCK_FILE"
+        exit 1
+    }
+    if ! flock -n 200; then
+        log ERROR "Operasi lain (backup/restore/update/restart) sedang berjalan."
+        log ERROR "Tunggu sampai selesai, lalu coba lagi."
+        log ERROR "Kalau yakin tidak ada proses lain yang berjalan: rm -f $LOCK_FILE"
+        exit 1
+    fi
 }
 
 get_current_version() {
@@ -220,6 +236,7 @@ cmd_stop() {
 cmd_restart() {
     check_root
     require_installed
+    acquire_lock
     systemctl restart "$SERVICE_NAME"
     log INFO "Server di-restart."
 }
@@ -397,6 +414,7 @@ $query_output"
 cmd_backup() {
     check_root
     require_installed
+    acquire_lock
 
     local include_worlds=false
     local safe_stop=false
@@ -635,6 +653,7 @@ restore_configs_atomic() {
 cmd_restore() {
     check_root
     require_installed
+    acquire_lock
     local ts="${1:-}"; shift || true
     if [ -z "$ts" ]; then
         log ERROR "Gunakan: $(basename "$0") restore <timestamp> [--worlds] [--configs]"
@@ -678,6 +697,7 @@ cmd_restore() {
 cmd_update() {
     check_root
     require_installed
+    acquire_lock
     if [ ! -x "$UPDATE_SCRIPT" ]; then
         log ERROR "Skrip update tidak ditemukan atau tidak executable: $UPDATE_SCRIPT"
         exit 1
@@ -926,6 +946,14 @@ main() {
             echo "PLAYER_LOG     = $PLAYER_LOG"
             echo "BACKUP_DIR     = $BACKUP_DIR"
             echo "BACKUP_RETAIN  = $BACKUP_RETAIN"
+            echo "LOCK_FILE      = $LOCK_FILE"
+            ;;
+        _test-lock-hold)
+            local hold="${1:-5}"
+            acquire_lock
+            echo "LOCK_HELD_PID=$$"
+            sleep "$hold"
+            echo "LOCK_RELEASING"
             ;;
         help|-h|--help) print_help ;;
         *)
