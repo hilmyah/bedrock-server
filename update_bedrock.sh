@@ -24,13 +24,17 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# KONFIGURASI — Sesuaikan jika diperlukan
+# KONFIGURASI
 # -----------------------------------------------------------------------------
-SERVER_DIR="/opt/bedrock-server"
-SCREEN_NAME="mc-server"
-BACKUP_DIR="/opt/bedrock-server-backup"
+# SERVER_DIR, SCREEN_NAME, SERVICE_NAME, BACKUP_DIR, LOCK_FILE TIDAK di-hardcode
+# di sini -- diresolusi oleh resolve_config() dengan urutan prioritas yang
+# PERSIS SAMA dengan bedrock-manager.sh: env var BEDROCK_* > CONF_FILE >
+# introspeksi systemctl > default bawaan. Ini wajib disamakan; skrip ini bisa
+# dipanggil baik lewat 'bedrock update' maupun langsung ('bedrock-update' /
+# 'sudo bash update_bedrock.sh'), dan pada instalasi dengan --dir=PATH custom,
+# path hardcode di sini akan salah sasaran secara diam-diam.
+CONF_FILE="/etc/bedrock-manager/manager.conf"
 LOG_FILE="/var/log/bedrock-update.log"
-MINECRAFT_DOWNLOAD_URL="https://www.minecraft.net/en-us/download/server/bedrock"
 
 # -----------------------------------------------------------------------------
 # WARNA OUTPUT
@@ -86,6 +90,77 @@ log() {
     echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
 }
 
+resolve_config() {
+    SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""; BACKUP_DIR=""; LOCK_FILE=""
+
+    if [ -f "$CONF_FILE" ]; then
+        # shellcheck source=/dev/null
+        source "$CONF_FILE"
+    fi
+
+    [ -z "$SERVICE_NAME" ] && SERVICE_NAME="bedrock"
+    [ -n "${BEDROCK_SERVICE_NAME:-}" ] && SERVICE_NAME="$BEDROCK_SERVICE_NAME"
+
+    if [ -z "$SERVER_DIR" ]; then
+        SERVER_DIR=$(systemctl show -p WorkingDirectory --value "${SERVICE_NAME}.service" 2>/dev/null || true)
+    fi
+    [ -z "$SERVER_DIR" ] && SERVER_DIR="/opt/bedrock-server"
+    [ -n "${BEDROCK_SERVER_DIR:-}" ] && SERVER_DIR="$BEDROCK_SERVER_DIR"
+
+    if [ -z "$SCREEN_NAME" ]; then
+        local execstart
+        execstart=$(systemctl show -p ExecStart --value "${SERVICE_NAME}.service" 2>/dev/null || true)
+        SCREEN_NAME=$(echo "$execstart" | grep -oE '\-DmS[[:space:]]+[^[:space:]]+' | awk '{print $2}')
+    fi
+    [ -z "$SCREEN_NAME" ] && SCREEN_NAME="mc-server"
+    [ -n "${BEDROCK_SCREEN_NAME:-}" ] && SCREEN_NAME="$BEDROCK_SCREEN_NAME"
+
+    [ -z "$BACKUP_DIR" ]            && BACKUP_DIR="${SERVER_DIR}-backup"
+    [ -n "${BEDROCK_BACKUP_DIR:-}" ] && BACKUP_DIR="$BEDROCK_BACKUP_DIR"
+
+    [ -z "$LOCK_FILE" ]            && LOCK_FILE="/var/lock/bedrock-manager-${SERVICE_NAME}.lock"
+    [ -n "${BEDROCK_LOCK_FILE:-}" ] && LOCK_FILE="$BEDROCK_LOCK_FILE"
+}
+
+# Lock yang SAMA dipakai bedrock-manager.sh (LOCK_FILE identik, lihat
+# resolve_config di atas), agar update tidak bisa tumpang tindih dengan
+# backup/restore/restart yang dijalankan lewat 'bedrock', dari jalur manapun
+# skrip ini dipanggil.
+#
+# Kasus 'bedrock update': cmd_update() di bedrock-manager.sh sudah memegang
+# fd 200 ter-flock pada LOCK_FILE lalu 'exec bash update_bedrock.sh' -- exec
+# mewarisi fd tsb ke proses ini. Jika di sini fd 200 langsung ditimpa lewat
+# 'exec 200>file', file descriptor lama (dan lock-nya) ikut tertutup sesaat
+# sebelum yang baru dibuka -- celah race meski singkat. Maka: kalau fd 200
+# sudah terbuka dan menunjuk ke LOCK_FILE yang sama, anggap lock sudah
+# dipegang pemanggil, jangan disentuh ulang.
+#
+# Kasus panggilan langsung ('bedrock-update' / 'sudo bash update_bedrock.sh'):
+# fd 200 belum terbuka sama sekali -- lakukan flock -n seperti biasa.
+acquire_lock() {
+    if [ -e "/proc/$$/fd/200" ]; then
+        local held_target want_target
+        held_target=$(readlink -f "/proc/$$/fd/200" 2>/dev/null || true)
+        want_target=$(readlink -f "$LOCK_FILE" 2>/dev/null || echo "$LOCK_FILE")
+        if [ -n "$held_target" ] && [ "$held_target" = "$want_target" ]; then
+            log INFO "Lock sudah dipegang oleh proses pemanggil (bedrock update)."
+            return 0
+        fi
+    fi
+
+    mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
+    exec 200>"$LOCK_FILE" || {
+        log ERROR "Tidak dapat membuka file lock: $LOCK_FILE"
+        exit 1
+    }
+    if ! flock -n 200; then
+        log ERROR "Operasi lain (backup/restore/update/restart) sedang berjalan."
+        log ERROR "Tunggu sampai selesai, lalu coba lagi."
+        log ERROR "Kalau yakin tidak ada proses lain yang berjalan: rm -f $LOCK_FILE"
+        exit 1
+    fi
+}
+
 check_dependencies() {
     local missing=()
     for cmd in curl wget unzip screen systemctl; do
@@ -102,7 +177,7 @@ check_dependencies() {
 }
 
 is_server_running() {
-    systemctl is-active --quiet bedrock
+    systemctl is-active --quiet "$SERVICE_NAME"
 }
 
 get_current_version() {
@@ -161,12 +236,16 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+resolve_config
 check_dependencies
 
 if [ ! -d "$SERVER_DIR" ]; then
     log ERROR "Direktori server tidak ditemukan: $SERVER_DIR"
     exit 1
 fi
+
+acquire_lock
+
 cd "$SERVER_DIR"
 
 # -----------------------------------------------------------------------------
@@ -199,7 +278,7 @@ log STEP "Menghentikan Server"
 
 if is_server_running; then
     log INFO "Memerintahkan systemd untuk mematikan server secara sinkron..."
-    systemctl stop bedrock
+    systemctl stop "$SERVICE_NAME"
     log INFO "Server berhasil dihentikan."
 else
     log INFO "Server tidak sedang berjalan. Melanjutkan pembaruan."
@@ -292,10 +371,10 @@ log INFO "Izin eksekusi berhasil disetel."
 if [ "$NO_RESTART" = true ]; then
     log WARN "Flag --no-restart aktif. Server tidak akan dijalankan ulang secara otomatis."
     log INFO "Jalankan server secara manual dengan:"
-    log INFO "  systemctl start bedrock"
+    log INFO "  systemctl start $SERVICE_NAME"
 else
     log STEP "Menjalankan Ulang Server"
-    systemctl start bedrock
+    systemctl start "$SERVICE_NAME"
     sleep 3
 
     if is_server_running; then
@@ -303,8 +382,8 @@ else
         log INFO "Lihat konsol dengan: screen -r $SCREEN_NAME"
     else
         log ERROR "Server gagal dijalankan. Periksa log dengan:"
-        log ERROR "  systemctl status bedrock"
-        log ERROR "  journalctl -u bedrock -n 50"
+        log ERROR "  systemctl status $SERVICE_NAME"
+        log ERROR "  journalctl -u $SERVICE_NAME -n 50"
         exit 1
     fi
 fi
