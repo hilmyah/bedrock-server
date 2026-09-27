@@ -542,6 +542,96 @@ cmd_backup_list() {
     done
 }
 
+restore_worlds_atomic() {
+    local src="$1" ts="$2"
+    local worlds_dir="${SERVER_DIR}/worlds"
+    local staging="${SERVER_DIR}/.worlds-restore-staging"
+    local safety="${SERVER_DIR}/worlds.before-restore-${ts}"
+
+    log STEP "Restore Worlds dari $ts"
+
+    rm -rf "$staging"
+    if ! cp -r "${src}/worlds" "$staging"; then
+        log ERROR "Gagal menyalin data worlds dari backup ke staging."
+        log ERROR "Restore DIBATALKAN — worlds/ yang sedang aktif tidak diubah sama sekali."
+        rm -rf "$staging"
+        return 1
+    fi
+
+    local file_count
+    file_count=$(find "$staging" -type f 2>/dev/null | wc -l)
+    if [ "$file_count" -eq 0 ]; then
+        log ERROR "Verifikasi gagal: hasil salinan staging kosong."
+        log ERROR "Restore DIBATALKAN — worlds/ yang sedang aktif tidak diubah sama sekali."
+        rm -rf "$staging"
+        return 1
+    fi
+
+    local was_running=false
+    is_server_running && was_running=true
+    [ "$was_running" = true ] && systemctl stop "$SERVICE_NAME"
+
+    if [ -d "$worlds_dir" ]; then
+        rm -rf "$safety"
+        mv "$worlds_dir" "$safety"
+    fi
+    mv "$staging" "$worlds_dir"
+
+    log INFO "Worlds dipulihkan dari: $src"
+    if [ -d "$safety" ]; then
+        log INFO "Worlds sebelumnya diamankan di: $safety"
+        log INFO "Hapus manual setelah yakin restore ini benar: rm -rf $safety"
+    fi
+
+    [ "$was_running" = true ] && systemctl start "$SERVICE_NAME"
+    return 0
+}
+
+# Config kecil (3 file), risiko gagal-di-tengah jauh lebih rendah dibanding
+# worlds, tapi tetap diberi jaring pengaman: versi yang sedang aktif disalin
+# ke .config-before-restore-<timestamp> sebelum ditimpa, dan setiap kegagalan
+# 'cp' sekarang eksplisit dilaporkan (versi lama diam-diam melanjutkan meski
+# salah satu file gagal disalin).
+restore_configs_atomic() {
+    local src="$1" ts="$2"
+    local safety_dir="${SERVER_DIR}/.config-before-restore-${ts}"
+    local restored=0 failed=0
+    local f
+
+    log STEP "Restore Konfigurasi dari $ts"
+
+    for f in server.properties allowlist.json permissions.json; do
+        if [ -f "${src}/${f}" ]; then
+            if [ -f "${SERVER_DIR}/${f}" ]; then
+                mkdir -p "$safety_dir"
+                cp "${SERVER_DIR}/${f}" "$safety_dir/${f}" 2>/dev/null || true
+            fi
+            if cp "${src}/${f}" "${SERVER_DIR}/${f}"; then
+                log INFO "Dipulihkan: $f"
+                restored=$((restored + 1))
+            else
+                log ERROR "Gagal memulihkan: $f"
+                failed=$((failed + 1))
+            fi
+        fi
+    done
+
+    if [ "$failed" -gt 0 ]; then
+        log ERROR "$failed config gagal dipulihkan — periksa manual."
+    fi
+    if [ -d "$safety_dir" ]; then
+        log INFO "Config sebelumnya diamankan di: $safety_dir"
+    fi
+
+    if is_server_running && screen_exists; then
+        screen -S "$SCREEN_NAME" -p 0 -X stuff "whitelist reload$(printf '\r')" 2>/dev/null || true
+        screen -S "$SCREEN_NAME" -p 0 -X stuff "permissions reload$(printf '\r')" 2>/dev/null || true
+        log INFO "allowlist/permissions dimuat ulang tanpa restart (whitelist reload, permissions reload)."
+    fi
+
+    [ "$failed" -eq 0 ]
+}
+
 cmd_restore() {
     check_root
     require_installed
@@ -566,35 +656,19 @@ cmd_restore() {
         do_worlds=true; do_configs=true
     fi
 
+    local restore_ts
+    restore_ts=$(date '+%Y%m%d_%H%M%S')
+
     if [ "$do_worlds" = true ]; then
         if [ ! -d "${src}/worlds" ]; then
             log WARN "Backup ini tidak memiliki data worlds, dilewati."
         else
-            log STEP "Restore Worlds dari $ts"
-            local was_running=false
-            is_server_running && was_running=true
-            [ "$was_running" = true ] && systemctl stop "$SERVICE_NAME"
-            rm -rf "${SERVER_DIR}/worlds"
-            cp -r "${src}/worlds" "${SERVER_DIR}/worlds"
-            log INFO "Worlds dipulihkan dari: $src"
-            [ "$was_running" = true ] && systemctl start "$SERVICE_NAME"
+            restore_worlds_atomic "$src" "$restore_ts" || exit 1
         fi
     fi
 
     if [ "$do_configs" = true ]; then
-        log STEP "Restore Konfigurasi dari $ts"
-        local f
-        for f in server.properties allowlist.json permissions.json; do
-            if [ -f "${src}/${f}" ]; then
-                cp "${src}/${f}" "${SERVER_DIR}/${f}"
-                log INFO "Dipulihkan: $f"
-            fi
-        done
-        if is_server_running && screen_exists; then
-            screen -S "$SCREEN_NAME" -p 0 -X stuff "whitelist reload$(printf '\r')" 2>/dev/null || true
-            screen -S "$SCREEN_NAME" -p 0 -X stuff "permissions reload$(printf '\r')" 2>/dev/null || true
-            log INFO "allowlist/permissions dimuat ulang tanpa restart (whitelist reload, permissions reload)."
-        fi
+        restore_configs_atomic "$src" "$restore_ts"
     fi
 }
 
