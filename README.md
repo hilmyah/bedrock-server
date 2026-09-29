@@ -284,6 +284,24 @@ Setelah instalasi, seluruh operasi harian dilakukan lewat perintah `bedrock` (sy
 
 > **Catatan jujur soal keterbatasan:** Bedrock Dedicated Server tidak memiliki RCON bawaan. `send` dan `online` bekerja dengan menyuntikkan teks ke sesi `screen`, bukan lewat protokol terstruktur. Jika sesi screen tidak ditemukan (server mati atau nama screen tidak cocok), perintah akan gagal dengan pesan eksplisit — bukan output yang dipalsukan.
 
+### Locking (Eksklusi Mutual)
+
+`backup`, `restore`, `update`, dan `restart` saling mengunci lewat `flock` pada satu `LOCK_FILE` (default: `/var/lock/bedrock-manager-<SERVICE_NAME>.lock`), agar dua operasi ini tidak pernah berjalan bersamaan dan saling menimpa `worlds/` atau `BACKUP_DIR` di tengah jalan. Kalau salah satunya sedang berjalan dan operasi lain dari perintah yang sama dicoba, yang belakangan langsung ditolak dengan pesan eksplisit, bukan menunggu tanpa batas:
+
+```
+[ERROR] Operasi lain (backup/restore/update/restart) sedang berjalan.
+[ERROR] Tunggu sampai selesai, lalu coba lagi.
+[ERROR] Kalau yakin tidak ada proses lain yang berjalan: rm -f /var/lock/bedrock-manager-bedrock.lock
+```
+
+`start`, `stop`, `status`, `console`, `send`, `online`, `logs`, `players`, `version`, dan `logger` TIDAK memerlukan lock ini: baik karena murni membaca (`logs`, `players`, `status`), maupun karena secara desain dianggap tidak berisiko menimpa data (`start`/`stop` individual, berbeda dari `restart`).
+
+`update_bedrock.sh` ikut serta di lock yang sama, dari jalur manapun ia dipanggil:
+- Lewat `bedrock update`: lock sudah dipegang oleh `bedrock-manager.sh` sebelum `exec` ke `update_bedrock.sh`, dan diwariskan lewat file descriptor yang sama (bukan dibuka ulang, untuk menghindari celah lepas-kunci sesaat).
+- Lewat pemanggilan langsung (`sudo bedrock-update` atau `sudo bash update_bedrock.sh`): lock diperoleh sendiri di awal skrip dengan mekanisme `flock -n` yang identik.
+
+Baik dipanggil lewat `bedrock update` maupun langsung, update tidak akan pernah berjalan bersamaan dengan `bedrock backup`/`restore`/`restart` yang sedang aktif.
+
 ### Konfigurasi Override (opsional)
 
 Jika direktori/nama service berbeda dari default, isi `/etc/bedrock-manager/manager.conf`:
@@ -295,9 +313,13 @@ SERVICE_NAME="bedrock"
 LOG_FILE="/var/log/bedrock-server.log"
 PLAYER_LOG="/opt/bedrock-server/player_activity.log"
 BACKUP_DIR="/opt/bedrock-server-backup"
+BACKUP_RETAIN=0
+LOCK_FILE="/var/lock/bedrock-manager-bedrock.lock"
 ```
 
-Atau lewat environment variable dengan prefiks `BEDROCK_` (mis. `BEDROCK_SERVER_DIR`, `BEDROCK_BACKUP_RETAIN`).
+`BACKUP_RETAIN=0` berarti tanpa batas (simpan semua backup selamanya, lihat [Retensi Backup](#retensi-backup)); `LOCK_FILE` adalah path lock yang dipakai bersama oleh `backup`/`restore`/`update`/`restart` (lihat [Locking](#locking-eksklusi-mutual)).
+
+Atau lewat environment variable dengan prefiks `BEDROCK_` (mis. `BEDROCK_SERVER_DIR`, `BEDROCK_BACKUP_RETAIN`, `BEDROCK_LOCK_FILE`).
 
 ---
 
@@ -341,6 +363,22 @@ bedrock restore 20260923_140000 --configs        # hanya config; jika server akt
                                                   # tanpa perlu restart
 ```
 
+### Mekanisme Restore (atomik + rollback lokal)
+
+Restore tidak pernah menghapus data aktif sebelum data pengganti terbukti utuh:
+
+- **Worlds**: data dari backup disalin dulu ke direktori staging sementara (`worlds/` yang aktif sama sekali tidak disentuh selama proses ini). Hasil salinan diverifikasi tidak kosong, baru `worlds/` lama dan staging DITUKAR lewat dua operasi `mv` (rename, bukan copy: nyaris instan, jauh lebih kecil risiko gagal di tengah jalan dibanding menyalin ratusan MB data). `worlds/` lama **tidak dihapus**, hanya di-rename menjadi `worlds.before-restore-<timestamp-restore>` di `SERVER_DIR` sebagai rollback manual kalau ternyata backup yang dipilih salah.
+- **Config**: `server.properties`, `allowlist.json`, `permissions.json` yang aktif disalin dulu ke `.config-before-restore-<timestamp-restore>` sebelum ditimpa.
+- Kalau penyalinan ke staging gagal atau hasilnya kosong, restore **dibatalkan** dan data aktif tidak diubah sama sekali, bukan separuh jadi.
+- `<timestamp-restore>` adalah waktu saat perintah `restore` dijalankan, berbeda dari `<ts>` argumen (timestamp backup yang dipulihkan).
+
+Bersihkan manual setelah yakin hasil restore benar:
+
+```bash
+rm -rf /opt/bedrock-server/worlds.before-restore-<timestamp-restore>
+rm -rf /opt/bedrock-server/.config-before-restore-<timestamp-restore>
+```
+
 ### Retensi Backup
 
 Secara default backup disimpan **selamanya** (`BACKUP_DIR`, sejajar dengan `SERVER_DIR`). Jika ingin membatasi jumlahnya, set environment variable `BEDROCK_BACKUP_RETAIN` (misal `=10` untuk menyimpan 10 backup terakhir saja). Batasan ini **tidak berlaku** untuk `player_activity.log` — log pemain selalu permanen terlepas dari pengaturan ini.
@@ -373,7 +411,7 @@ dengan format append-only:
 | `bedrock players today` | Aktivitas hari ini saja. |
 | `bedrock players search <nama>` | Seluruh riwayat satu nama pemain. |
 | `bedrock players count` | Jumlah entri & ukuran file. |
-| `bedrock players stats` | Total sesi & total lama bermain (join→leave) per pemain, terurut dari yang terlama. |
+| `bedrock players stats` | Total sesi & total lama bermain (join→leave), dikelompokkan per **XUID** (bukan per nama: nama bisa berganti, XUID tetap; nama yang ditampilkan adalah nama terakhir tercatat untuk XUID tsb), terurut dari yang terlama. |
 
 ---
 
