@@ -110,7 +110,7 @@ resolve_config() {
     if [ -z "$SCREEN_NAME" ]; then
         local execstart
         execstart=$(systemctl show -p ExecStart --value "${SERVICE_NAME}.service" 2>/dev/null || true)
-        SCREEN_NAME=$(echo "$execstart" | grep -oE '\-DmS[[:space:]]+[^[:space:]]+' | awk '{print $2}')
+        SCREEN_NAME=$(echo "$execstart" | grep -oE '\-DmS[[:space:]]+[^[:space:]]+' | awk '{print $2}' || true)
     fi
     [ -z "$SCREEN_NAME" ] && SCREEN_NAME="mc-server"
     [ -n "${BEDROCK_SCREEN_NAME:-}" ] && SCREEN_NAME="$BEDROCK_SCREEN_NAME"
@@ -120,6 +120,7 @@ resolve_config() {
 
     [ -z "$LOCK_FILE" ]            && LOCK_FILE="/var/lock/bedrock-manager-${SERVICE_NAME}.lock"
     [ -n "${BEDROCK_LOCK_FILE:-}" ] && LOCK_FILE="$BEDROCK_LOCK_FILE"
+    return 0
 }
 
 # Lock yang SAMA dipakai bedrock-manager.sh (LOCK_FILE identik, lihat
