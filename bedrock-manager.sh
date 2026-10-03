@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# bedrock-manager.sh — Skrip Manajemen Terpadu Minecraft Bedrock Server
+# bedrock-manager.sh - Skrip Manajemen Terpadu Minecraft Bedrock Server
 # Repositori acuan: https://github.com/hilmyah/bedrock-server
 # =============================================================================
 # Deskripsi:
@@ -10,8 +10,25 @@
 #   pemasangan/pengelolaan player activity logger permanen (join/leave),
 #   serta pembacaan riwayat pemain.
 #
+# Sifat universal (tidak terikat lokasi maupun user tertentu):
+#   Direktori server, nama screen, user service, dan path log TIDAK di-hardcode.
+#   Urutan resolusi: env var BEDROCK_* > manager.conf (opsional) > introspeksi
+#   unit systemd (WorkingDirectory, User, ExecStart) > direktori skrip ini
+#   berada > default bawaan. Server boleh berada di mana saja (mis. /opt atau
+#   ~/projects) dan boleh berjalan sebagai root maupun user biasa.
 #
-# Prasyarat: bash >= 4, systemd, screen, coreutils (ps, du, tail, sed, grep)
+# Hak akses:
+#   - Jalankan sebagai user pemilik service (tanpa sudo) atau sebagai root.
+#   - start/stop/restart dan backup/restore yang perlu menghentikan server
+#     memanggil 'sudo systemctl' bila dijalankan bukan sebagai root.
+#   - 'logger install', 'logger uninstall', 'self-install' menulis ke
+#     /etc/systemd/system atau /usr/local/bin sehingga wajib lewat sudo.
+#   - Bila dijalankan lewat sudo sementara service milik user biasa, perintah
+#     screen dijalankan sebagai user tersebut dan file hasil backup/restore
+#     dikembalikan kepemilikannya ke user tersebut.
+#
+# Prasyarat: bash >= 4, systemd, screen, util-linux (flock, runuser, script),
+#            coreutils (ps, du, tail, sed, grep)
 #
 # Instalasi skrip ini sendiri (opsional, agar bisa dipanggil sebagai "bedrock"):
 #   sudo bash bedrock-manager.sh self-install
@@ -51,6 +68,7 @@
 #   players stats                 Total sesi & lama bermain (join-leave) per pemain
 #   logs [n]                      Tampilkan n baris terakhir log mentah server (default 50)
 #   self-install                  Symlink skrip ini ke /usr/local/bin/bedrock
+#                                 (dan update_bedrock.sh ke /usr/local/bin/bedrock-update)
 #   help                          Tampilkan bantuan ini
 #
 # =============================================================================
@@ -76,10 +94,17 @@ log() {
 # -----------------------------------------------------------------------------
 # RESOLUSI KONFIGURASI (lihat blok "Sifat universal" di header)
 # -----------------------------------------------------------------------------
-CONF_FILE="/etc/bedrock-manager/manager.conf"
+CONF_FILE="${BEDROCK_CONF_FILE:-/etc/bedrock-manager/manager.conf}"
+SELF_PATH=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "$0")
+SELF_DIR=$(dirname "$SELF_PATH")
+CURRENT_USER=$(id -un 2>/dev/null || echo "unknown")
+
+unit_prop() {
+    systemctl show -p "$1" --value "${SERVICE_NAME}.service" 2>/dev/null || true
+}
 
 resolve_config() {
-    SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""
+    SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""; SERVICE_USER=""
     LOG_FILE=""; PLAYER_LOG=""; BACKUP_DIR=""; BACKUP_RETAIN=""; LOCK_FILE=""
 
     if [ -f "$CONF_FILE" ]; then
@@ -90,25 +115,48 @@ resolve_config() {
     [ -z "$SERVICE_NAME" ] && SERVICE_NAME="bedrock"
     [ -n "${BEDROCK_SERVICE_NAME:-}" ] && SERVICE_NAME="$BEDROCK_SERVICE_NAME"
 
+    local execstart
+    execstart=$(unit_prop ExecStart)
+
+    # Direktori server: unit systemd > direktori tempat skrip ini berada (bila
+    # berisi binary server) > default lama. Dengan urutan ini skrip tetap benar
+    # setelah direktori server dipindah, selama WorkingDirectory unit ikut diubah.
     if [ -z "$SERVER_DIR" ]; then
-        SERVER_DIR=$(systemctl show -p WorkingDirectory --value "${SERVICE_NAME}.service" 2>/dev/null || true)
+        SERVER_DIR=$(unit_prop WorkingDirectory)
+        SERVER_DIR="${SERVER_DIR#[-!]}"
+    fi
+    if [ -z "$SERVER_DIR" ] && [ -e "${SELF_DIR}/bedrock_server" ]; then
+        SERVER_DIR="$SELF_DIR"
     fi
     [ -z "$SERVER_DIR" ] && SERVER_DIR="/opt/bedrock-server"
     [ -n "${BEDROCK_SERVER_DIR:-}" ] && SERVER_DIR="$BEDROCK_SERVER_DIR"
 
     if [ -z "$SCREEN_NAME" ]; then
-        local execstart
-        execstart=$(systemctl show -p ExecStart --value "${SERVICE_NAME}.service" 2>/dev/null || true)
         SCREEN_NAME=$(echo "$execstart" | grep -oE '\-DmS[[:space:]]+[^[:space:]]+' | awk '{print $2}')
     fi
     [ -z "$SCREEN_NAME" ] && SCREEN_NAME="mc-server"
     [ -n "${BEDROCK_SCREEN_NAME:-}" ] && SCREEN_NAME="$BEDROCK_SCREEN_NAME"
 
+    # User yang menjalankan service. Sesi screen hanya terlihat oleh user ini,
+    # dan seluruh file di SERVER_DIR harus tetap menjadi miliknya.
+    [ -z "$SERVICE_USER" ] && SERVICE_USER=$(unit_prop User)
+    [ -z "$SERVICE_USER" ] && SERVICE_USER="root"
+    [ -n "${BEDROCK_SERVICE_USER:-}" ] && SERVICE_USER="$BEDROCK_SERVICE_USER"
+    SERVICE_GROUP=$(id -gn "$SERVICE_USER" 2>/dev/null || echo "$SERVICE_USER")
+
+    # Log konsol: diambil dari argumen 'tee -a' pada ExecStart bila ada.
+    if [ -z "$LOG_FILE" ]; then
+        LOG_FILE=$(echo "$execstart" | grep -oE "tee -a[[:space:]]+[^[:space:];']+" | awk '{print $3}' | head -n 1)
+    fi
     [ -z "$LOG_FILE" ]      && LOG_FILE="/var/log/bedrock-server.log"
     [ -z "$PLAYER_LOG" ]    && PLAYER_LOG="${SERVER_DIR}/player_activity.log"
     [ -z "$BACKUP_DIR" ]    && BACKUP_DIR="${SERVER_DIR}-backup"
     [ -z "$BACKUP_RETAIN" ] && BACKUP_RETAIN=0
-    [ -z "$LOCK_FILE" ]     && LOCK_FILE="/var/lock/bedrock-manager-${SERVICE_NAME}.lock"
+    # Lock disimpan di dalam SERVER_DIR, bukan /var/lock: direktori sticky
+    # world-writable seperti /run/lock menolak (fs.protected_regular) pembukaan
+    # file milik user lain, termasuk oleh root, sehingga lock yang dibuat user
+    # service tidak bisa dipakai bersama pemanggilan lewat sudo dan sebaliknya.
+    [ -z "$LOCK_FILE" ]     && LOCK_FILE="${SERVER_DIR}/.bedrock-manager.lock"
 
     [ -n "${BEDROCK_LOG_FILE:-}" ]      && LOG_FILE="$BEDROCK_LOG_FILE"
     [ -n "${BEDROCK_PLAYER_LOG:-}" ]    && PLAYER_LOG="$BEDROCK_PLAYER_LOG"
@@ -122,17 +170,87 @@ resolve_config() {
 # -----------------------------------------------------------------------------
 # UTILITAS
 # -----------------------------------------------------------------------------
+# Hanya untuk perintah yang menulis ke lokasi sistem (/etc/systemd/system,
+# /usr/local/bin). Perintah lain cukup memakai require_operator.
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        log ERROR "Perintah ini memerlukan hak akses root atau sudo."
+        log ERROR "Perintah ini menulis ke lokasi sistem. Jalankan dengan sudo."
         exit 1
     fi
+}
+
+is_service_user() {
+    [ "$CURRENT_USER" = "$SERVICE_USER" ]
+}
+
+# Operasi yang menyentuh file server atau sesi screen hanya sah untuk user
+# pemilik service atau root.
+require_operator() {
+    if [ "$EUID" -eq 0 ] || is_service_user; then
+        return 0
+    fi
+    log ERROR "Service '$SERVICE_NAME' berjalan sebagai user '$SERVICE_USER', sedangkan Anda '$CURRENT_USER'."
+    log ERROR "Jalankan sebagai '$SERVICE_USER' atau lewat sudo."
+    exit 1
+}
+
+# systemctl start/stop/restart butuh hak root. Bila dipanggil user biasa,
+# diteruskan lewat sudo (meminta password sesuai kebijakan sudoers).
+svc_ctl() {
+    if [ "$EUID" -eq 0 ]; then
+        systemctl "$@"
+        return
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        log ERROR "'systemctl $*' butuh hak root dan sudo tidak tersedia."
+        return 1
+    fi
+    sudo systemctl "$@"
+}
+
+# Menjalankan perintah sebagai user service. Dipakai untuk screen: socket sesi
+# berada di direktori milik user yang menjalankan service, sehingga root pun
+# tidak melihat sesi tersebut lewat 'screen -list' biasa.
+as_service_user() {
+    if is_service_user; then
+        "$@"
+    elif [ "$EUID" -eq 0 ]; then
+        runuser -u "$SERVICE_USER" -- "$@"
+    else
+        return 1
+    fi
+}
+
+screen_cmd() {
+    as_service_user screen "$@"
+}
+
+# Mengembalikan kepemilikan ke user service. Hanya berefek bila skrip jalan
+# sebagai root sementara service milik user lain; selain itu no-op.
+fix_owner() {
+    [ "$EUID" -eq 0 ] || return 0
+    [ "$SERVICE_USER" = "root" ] && return 0
+    local p
+    for p in "$@"; do
+        [ -e "$p" ] && chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$p"
+    done
+    return 0
+}
+
+fix_owner_top() {
+    [ "$EUID" -eq 0 ] || return 0
+    [ "$SERVICE_USER" = "root" ] && return 0
+    local p
+    for p in "$@"; do
+        [ -e "$p" ] && chown "${SERVICE_USER}:${SERVICE_GROUP}" "$p"
+    done
+    return 0
 }
 
 require_installed() {
     if [ ! -d "$SERVER_DIR" ] || [ ! -x "$SERVER_DIR/bedrock_server" ]; then
         log ERROR "Instalasi server tidak ditemukan di: $SERVER_DIR"
-        log ERROR "Set BEDROCK_SERVER_DIR atau isi $CONF_FILE jika direktori berbeda."
+        log ERROR "Periksa WorkingDirectory pada unit ${SERVICE_NAME}.service, atau set BEDROCK_SERVER_DIR."
         exit 1
     fi
 }
@@ -149,7 +267,7 @@ require_running() {
 }
 
 screen_exists() {
-    screen -list 2>/dev/null | grep -q "\.${SCREEN_NAME}[[:space:]]"
+    screen_cmd -list 2>/dev/null | grep -q "\.${SCREEN_NAME}[[:space:]]"
 }
 
 # Mencegah 'backup', 'restore', 'update', dan 'restart' berjalan bersamaan --
@@ -163,10 +281,13 @@ screen_exists() {
 # 'logs', 'players', 'status' TIDAK memanggil ini karena murni baca.
 acquire_lock() {
     mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
-    exec 200>"$LOCK_FILE" || {
+    # '>>' (bukan '>'): cukup membuka/membuat file tanpa memotong isinya.
+    if ! { exec 200>>"$LOCK_FILE"; } 2>/dev/null; then
         log ERROR "Tidak dapat membuka file lock: $LOCK_FILE"
+        log ERROR "Jalankan sebagai '$SERVICE_USER' atau lewat sudo."
         exit 1
-    }
+    fi
+    fix_owner_top "$LOCK_FILE"
     if ! flock -n 200; then
         log ERROR "Operasi lain (backup/restore/update/restart) sedang berjalan."
         log ERROR "Tunggu sampai selesai, lalu coba lagi."
@@ -222,31 +343,29 @@ cmd_version() {
 # KONTROL SERVICE
 # -----------------------------------------------------------------------------
 cmd_start() {
-    check_root
     require_installed
     if is_server_running; then
         log WARN "Server sudah berjalan."
         return 0
     fi
-    systemctl start "$SERVICE_NAME"
+    svc_ctl start "$SERVICE_NAME" || { log ERROR "Gagal menjalankan service."; exit 1; }
     log INFO "Perintah start dikirim ke systemd."
 }
 
 cmd_stop() {
-    check_root
     if ! is_server_running; then
         log WARN "Server tidak sedang berjalan."
         return 0
     fi
-    systemctl stop "$SERVICE_NAME"
+    svc_ctl stop "$SERVICE_NAME" || { log ERROR "Gagal menghentikan service."; exit 1; }
     log INFO "Server dihentikan."
 }
 
 cmd_restart() {
-    check_root
+    require_operator
     require_installed
     acquire_lock
-    systemctl restart "$SERVICE_NAME"
+    svc_ctl restart "$SERVICE_NAME" || { log ERROR "Gagal me-restart service."; exit 1; }
     log INFO "Server di-restart."
 }
 
@@ -256,6 +375,7 @@ cmd_status() {
     systemctl status "$SERVICE_NAME" --no-pager -l 2>/dev/null | head -n 10
     echo ""
     echo -e "${BOLD}Direktori server :${RESET} $SERVER_DIR"
+    echo -e "${BOLD}User service     :${RESET} $SERVICE_USER"
     echo -e "${BOLD}Versi terpasang  :${RESET} $(get_current_version)"
 
     if is_server_running; then
@@ -283,13 +403,20 @@ cmd_status() {
 }
 
 cmd_console() {
+    require_operator
     require_installed
     if ! screen_exists; then
-        log ERROR "Sesi screen '$SCREEN_NAME' tidak ditemukan. Server mungkin tidak berjalan."
+        log ERROR "Sesi screen '$SCREEN_NAME' milik user '$SERVICE_USER' tidak ditemukan. Server mungkin tidak berjalan."
         exit 1
     fi
     log INFO "Melampirkan ke sesi screen '$SCREEN_NAME'. Keluar tanpa menghentikan server: Ctrl+A lalu D."
-    exec screen -r "$SCREEN_NAME"
+    if is_service_user; then
+        exec screen -r "$SCREEN_NAME"
+    fi
+    # Root yang attach ke sesi user lain: terminal saat ini bukan milik user
+    # tersebut sehingga screen menolak ("Cannot open your terminal").
+    # 'script' membuat pty baru yang dimiliki user service.
+    exec runuser -u "$SERVICE_USER" -- script -q -c "screen -r $SCREEN_NAME" /dev/null
 }
 
 cmd_send() {
@@ -298,23 +425,25 @@ cmd_send() {
         log ERROR "Gunakan: $(basename "$0") send \"<perintah in-game>\""
         exit 1
     fi
+    require_operator
     require_running
     if ! screen_exists; then
         log ERROR "Sesi screen '$SCREEN_NAME' tidak ditemukan."
         exit 1
     fi
-    screen -S "$SCREEN_NAME" -p 0 -X stuff "${cmdtext}\r"
+    screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "${cmdtext}\r"
     log INFO "Perintah terkirim: $cmdtext"
 }
 
 cmd_online() {
+    require_operator
     require_running
     if ! screen_exists; then
         log ERROR "Sesi screen '$SCREEN_NAME' tidak ditemukan."
         exit 1
     fi
     log INFO "Mengirim perintah 'list' dan membaca respons dari log..."
-    screen -S "$SCREEN_NAME" -p 0 -X stuff "list\r"
+    screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "list\r"
     sleep 2
     local result
     result=$(tail -n 30 "$LOG_FILE" 2>/dev/null | grep "There are" | tail -n 1)
@@ -334,14 +463,14 @@ live_backup_worlds() {
     local hold_issued=false
     resume_if_held() {
         if [ "$hold_issued" = true ]; then
-            screen -S "$SCREEN_NAME" -p 0 -X stuff "save resume$(printf '\r')" 2>/dev/null || true
+            screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "save resume$(printf '\r')" 2>/dev/null || true
             hold_issued=false
         fi
     }
     trap resume_if_held RETURN
 
     log INFO "Mengirim 'save hold' ke konsol server..."
-    screen -S "$SCREEN_NAME" -p 0 -X stuff "save hold$(printf '\r')"
+    screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "save hold$(printf '\r')"
     hold_issued=true
 
     local attempt=0 max_attempts=24 interval=5
@@ -349,7 +478,7 @@ live_backup_worlds() {
 
     while [ "$attempt" -lt "$max_attempts" ]; do
         sleep "$interval"
-        screen -S "$SCREEN_NAME" -p 0 -X stuff "save query$(printf '\r')"
+        screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "save query$(printf '\r')"
         sleep 1
         query_output=$(tail -n 20 "$LOG_FILE" 2>/dev/null || true)
 
@@ -359,17 +488,21 @@ $query_output"
         fi
 
         if echo "$query_output" | grep -q "Data saved."; then
-            # Path pada respons 'save query' SELALU diawali 'worlds/' (nama
-            # direktori tetap dari protokol BDS, terpisah dari level-name yang
-            # bisa dikonfigurasi) dan setiap entri berbentuk 'path:panjang_byte'
-            # dipisah koma. Pola ini dipakai langsung tanpa bergantung pada
-            # posisi baris relatif terhadap pesan "Files are now ready to be
-            # copied." (bisa satu baris atau baris terpisah tergantung versi
-            # server), dan TIDAK memakai batas spasi sebagai pemisah karena
-            # level-name default resminya sendiri mengandung spasi ("Bedrock
-            # level") -- hanya koma yang dipakai sebagai pemisah antar entri.
-            file_list=$(echo "$query_output" | grep -oE 'worlds/[^,]+:[0-9]+(,worlds/[^,]+:[0-9]+)*' | tail -n 1)
-            break
+            # Daftar file berbentuk 'path:panjang_byte' dipisah koma. Parser
+            # sengaja toleran terhadap variasi antar versi server:
+            #   - pemisah ',' maupun ', ' (spasi di-trim per entri, BUKAN
+            #     dipakai sebagai pemisah: level-name default "Bedrock level"
+            #     sendiri mengandung spasi),
+            #   - path diawali 'worlds/' maupun langsung nama level,
+            #   - daftar berada di baris sendiri maupun menyambung setelah
+            #     kalimat "Files are now ready to be copied.".
+            # Hanya baris sejak "Data saved." TERAKHIR yang dipertimbangkan,
+            # agar baris log lain di jendela tail tidak salah terbaca.
+            file_list=$(echo "$query_output" \
+                | awk '/Data saved\./{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' \
+                | grep -E '/[^,]*:[0-9]+' | tail -n 1 \
+                | sed -E 's/.*ready to be copied\.?[[:space:]]*//; s/^\[[^]]*\][[:space:]]*//')
+            [ -n "$file_list" ] && break
         fi
         attempt=$((attempt + 1))
         log INFO "Menunggu server siap untuk backup (percobaan $attempt/$max_attempts)..."
@@ -395,12 +528,19 @@ $query_output"
             skipped=$((skipped + 1))
             continue
         fi
-        local src="${SERVER_DIR}/${rel_path}"
+        # Normalisasi: path tujuan selalu relatif terhadap worlds/ ('dest'
+        # sudah menunjuk ke <backup>/worlds), apa pun bentuk path dari server.
+        rel_path="${rel_path#worlds/}"
+        local src="${SERVER_DIR}/worlds/${rel_path}"
         local dst="${dest}/${rel_path}"
-        mkdir -p "$(dirname "$dst")"
         if [ -f "$src" ]; then
-            head -c "$length" "$src" > "$dst"
-            count=$((count + 1))
+            mkdir -p "$(dirname "$dst")"
+            if head -c "$length" "$src" > "$dst"; then
+                count=$((count + 1))
+            else
+                log WARN "Gagal menyalin: $src"
+                skipped=$((skipped + 1))
+            fi
         else
             log WARN "File sumber tidak ditemukan, dilewati: $src"
             skipped=$((skipped + 1))
@@ -410,6 +550,12 @@ $query_output"
 
     trap - RETURN
     resume_if_held
+    # Satu entri saja yang gagal berarti snapshot tidak utuh: dianggap GAGAL,
+    # bukan dilaporkan sukses dengan isi sebagian.
+    if [ "$skipped" -gt 0 ]; then
+        log ERROR "$skipped entri dari daftar 'save query' tidak dapat disalin."
+        return 1
+    fi
     [ "$count" -gt 0 ]
 }
 
@@ -418,16 +564,16 @@ $query_output"
 # -----------------------------------------------------------------------------
 # PERBAIKAN (atomik): versi sebelumnya menulis langsung ke $BACKUP_DIR/$ts dan,
 # kalau live_backup_worlds gagal, hanya mencatat WARN lalu tetap melanjutkan
-# sampai "Backup tersimpan di: ..." — folder gagal-sebagian itu terlihat sah
+# sampai "Backup tersimpan di: ..." - folder gagal-sebagian itu terlihat sah
 # di 'backup-list' padahal isinya tidak lengkap. Sekarang seluruh proses
 # ditulis ke direktori sementara (.tmp-<ts>), diverifikasi (config ada & tidak
 # kosong, worlds berisi minimal satu file jika diminta), dan HANYA di-rename
 # ke nama final bertimestamp kalau semua tahap lolos. Kalau gagal di titik
-# manapun, direktori sementara dihapus lewat trap EXIT (bukan RETURN — exit
+# manapun, direktori sementara dihapus lewat trap EXIT (bukan RETURN - exit
 # tidak memicu RETURN, sudah diuji) sehingga tidak pernah ada folder setengah
 # jadi yang tampak seperti backup sukses.
 cmd_backup() {
-    check_root
+    require_operator
     require_installed
     acquire_lock
 
@@ -443,7 +589,11 @@ cmd_backup() {
         esac
     done
 
-    mkdir -p "$BACKUP_DIR"
+    if ! mkdir -p "$BACKUP_DIR"; then
+        log ERROR "Tidak dapat membuat direktori backup: $BACKUP_DIR"
+        exit 1
+    fi
+    fix_owner_top "$BACKUP_DIR"
     local ts tmp_dest final_dest
     ts=$(date '+%Y%m%d_%H%M%S')
     tmp_dest="$BACKUP_DIR/.tmp-${ts}"
@@ -457,7 +607,7 @@ cmd_backup() {
     local backup_ok=false
     cleanup_tmp_backup() {
         if [ "$backup_ok" != true ] && [ -d "$tmp_dest" ]; then
-            log WARN "Backup dibatalkan/gagal — menghapus direktori sementara: $tmp_dest"
+            log WARN "Backup dibatalkan/gagal - menghapus direktori sementara: $tmp_dest"
             rm -rf "$tmp_dest"
         fi
     }
@@ -491,9 +641,14 @@ cmd_backup() {
             log INFO "Mode --stop aktif: menghentikan server untuk snapshot terjamin konsisten."
             local was_running=false
             is_server_running && was_running=true
-            [ "$was_running" = true ] && systemctl stop "$SERVICE_NAME"
+            if [ "$was_running" = true ] && ! svc_ctl stop "$SERVICE_NAME"; then
+                log ERROR "Gagal menghentikan server. Backup DIBATALKAN, tidak ada yang diubah."
+                exit 1
+            fi
             cp -r "$SERVER_DIR/worlds" "$tmp_dest/worlds"
-            [ "$was_running" = true ] && systemctl start "$SERVICE_NAME"
+            if [ "$was_running" = true ] && ! svc_ctl start "$SERVICE_NAME"; then
+                log ERROR "Server GAGAL dijalankan kembali. Jalankan manual: $(basename "$0") start"
+            fi
             log INFO "Backup worlds (mode stop) selesai."
         elif is_server_running && screen_exists; then
             if ! live_backup_worlds "$tmp_dest/worlds" "$debug"; then
@@ -537,6 +692,7 @@ cmd_backup() {
     # 'mv' dalam satu filesystem bersifat atomik (rename syscall), jadi tidak
     # pernah ada jendela waktu di mana nama final ada tapi isinya setengah jadi.
     mv "$tmp_dest" "$final_dest"
+    fix_owner "$final_dest"
     backup_ok=true
     trap - EXIT
 
@@ -581,7 +737,7 @@ cmd_backup_list() {
 # yang tersisa cuma salinan setengah jadi. Sekarang data restore disalin ke
 # staging dulu (worlds/ asli sama sekali tidak disentuh selama proses ini),
 # diverifikasi tidak kosong, baru DITUKAR lewat dua 'mv' (operasi rename,
-# bukan copy — sangat singkat, risiko gagal di tengah jalan jauh lebih
+# bukan copy - sangat singkat, risiko gagal di tengah jalan jauh lebih
 # kecil dibanding menyalin ratusan MB data). worlds/ lama TIDAK dihapus,
 # hanya di-rename ke worlds.before-restore-<timestamp> sebagai rollback
 # lokal manual kalau ternyata restore yang dipilih salah.
@@ -596,7 +752,7 @@ restore_worlds_atomic() {
     rm -rf "$staging"
     if ! cp -r "${src}/worlds" "$staging"; then
         log ERROR "Gagal menyalin data worlds dari backup ke staging."
-        log ERROR "Restore DIBATALKAN — worlds/ yang sedang aktif tidak diubah sama sekali."
+        log ERROR "Restore DIBATALKAN - worlds/ yang sedang aktif tidak diubah sama sekali."
         rm -rf "$staging"
         return 1
     fi
@@ -605,20 +761,26 @@ restore_worlds_atomic() {
     file_count=$(find "$staging" -type f 2>/dev/null | wc -l)
     if [ "$file_count" -eq 0 ]; then
         log ERROR "Verifikasi gagal: hasil salinan staging kosong."
-        log ERROR "Restore DIBATALKAN — worlds/ yang sedang aktif tidak diubah sama sekali."
+        log ERROR "Restore DIBATALKAN - worlds/ yang sedang aktif tidak diubah sama sekali."
         rm -rf "$staging"
         return 1
     fi
 
     local was_running=false
     is_server_running && was_running=true
-    [ "$was_running" = true ] && systemctl stop "$SERVICE_NAME"
+    if [ "$was_running" = true ] && ! svc_ctl stop "$SERVICE_NAME"; then
+        log ERROR "Gagal menghentikan server."
+        log ERROR "Restore DIBATALKAN, worlds/ yang sedang aktif tidak diubah sama sekali."
+        rm -rf "$staging"
+        return 1
+    fi
 
     if [ -d "$worlds_dir" ]; then
         rm -rf "$safety"
         mv "$worlds_dir" "$safety"
     fi
     mv "$staging" "$worlds_dir"
+    fix_owner "$worlds_dir"
 
     log INFO "Worlds dipulihkan dari: $src"
     if [ -d "$safety" ]; then
@@ -626,7 +788,9 @@ restore_worlds_atomic() {
         log INFO "Hapus manual setelah yakin restore ini benar: rm -rf $safety"
     fi
 
-    [ "$was_running" = true ] && systemctl start "$SERVICE_NAME"
+    if [ "$was_running" = true ] && ! svc_ctl start "$SERVICE_NAME"; then
+        log ERROR "Server GAGAL dijalankan kembali. Jalankan manual: $(basename "$0") start"
+    fi
     return 0
 }
 
@@ -650,6 +814,7 @@ restore_configs_atomic() {
                 cp "${SERVER_DIR}/${f}" "$safety_dir/${f}" 2>/dev/null || true
             fi
             if cp "${src}/${f}" "${SERVER_DIR}/${f}"; then
+                fix_owner_top "${SERVER_DIR}/${f}"
                 log INFO "Dipulihkan: $f"
                 restored=$((restored + 1))
             else
@@ -660,15 +825,16 @@ restore_configs_atomic() {
     done
 
     if [ "$failed" -gt 0 ]; then
-        log ERROR "$failed config gagal dipulihkan — periksa manual."
+        log ERROR "$failed config gagal dipulihkan - periksa manual."
     fi
     if [ -d "$safety_dir" ]; then
+        fix_owner "$safety_dir"
         log INFO "Config sebelumnya diamankan di: $safety_dir"
     fi
 
     if is_server_running && screen_exists; then
-        screen -S "$SCREEN_NAME" -p 0 -X stuff "whitelist reload$(printf '\r')" 2>/dev/null || true
-        screen -S "$SCREEN_NAME" -p 0 -X stuff "permissions reload$(printf '\r')" 2>/dev/null || true
+        screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "whitelist reload$(printf '\r')" 2>/dev/null || true
+        screen_cmd -S "$SCREEN_NAME" -p 0 -X stuff "permissions reload$(printf '\r')" 2>/dev/null || true
         log INFO "allowlist/permissions dimuat ulang tanpa restart (whitelist reload, permissions reload)."
     fi
 
@@ -676,7 +842,7 @@ restore_configs_atomic() {
 }
 
 cmd_restore() {
-    check_root
+    require_operator
     require_installed
     acquire_lock
     local ts="${1:-}"; shift || true
@@ -720,7 +886,7 @@ cmd_restore() {
 # UPDATE (meneruskan ke update_bedrock.sh yang sudah ada)
 # -----------------------------------------------------------------------------
 cmd_update() {
-    check_root
+    require_operator
     require_installed
     acquire_lock
     if [ ! -x "$UPDATE_SCRIPT" ]; then
@@ -747,7 +913,7 @@ logger_install() {
 set -uo pipefail
 
 LOG_FILE="${BEDROCK_LOG_FILE:-/var/log/bedrock-server.log}"
-PLAYER_LOG="${BEDROCK_PLAYER_LOG:-/opt/bedrock-server/player_activity.log}"
+PLAYER_LOG="${BEDROCK_PLAYER_LOG:-$(dirname "$(readlink -f "$0")")/player_activity.log}"
 
 mkdir -p "$(dirname "$PLAYER_LOG")"
 touch "$PLAYER_LOG"
@@ -770,6 +936,8 @@ done
 SCRIPT_EOF
 
     chmod +x "$logger_script"
+    touch "$PLAYER_LOG"
+    fix_owner_top "$logger_script" "$PLAYER_LOG"
     log INFO "Skrip logger dipasang: $logger_script"
 
     cat > "$unit_file" << EOF
@@ -780,7 +948,7 @@ Wants=${SERVICE_NAME}.service
 
 [Service]
 Type=simple
-User=root
+User=${SERVICE_USER}
 Environment=BEDROCK_LOG_FILE=${LOG_FILE}
 Environment=BEDROCK_PLAYER_LOG=${PLAYER_LOG}
 ExecStart=/bin/bash ${logger_script}
@@ -790,12 +958,15 @@ RestartSec=5s
 [Install]
 WantedBy=multi-user.target
 EOF
+    # Eksplisit 644: dengan umask 002, file akan group-writable dan memicu
+    # peringatan systemd.
+    chmod 644 "$unit_file"
 
     systemctl daemon-reload
     systemctl enable bedrock-player-logger.service
     systemctl restart bedrock-player-logger.service
 
-    log INFO "Service aktif: bedrock-player-logger"
+    log INFO "Service aktif: bedrock-player-logger (berjalan sebagai user '$SERVICE_USER')"
     log INFO "File log pemain (permanen): $PLAYER_LOG"
     log INFO "Retensi: tidak ada batas waktu. Hanya reset jika file ini dihapus manual."
 }
@@ -929,12 +1100,16 @@ cmd_logs() {
 cmd_selfinstall() {
     check_root
     local target="/usr/local/bin/bedrock"
-    local self
-    self=$(readlink -f "$0")
-    ln -sf "$self" "$target"
-    chmod +x "$self"
-    log INFO "Symlink dibuat: $target -> $self"
+    ln -sfn "$SELF_PATH" "$target"
+    chmod +x "$SELF_PATH"
+    log INFO "Symlink dibuat: $target -> $SELF_PATH"
+    if [ -f "${SELF_DIR}/update_bedrock.sh" ]; then
+        chmod +x "${SELF_DIR}/update_bedrock.sh"
+        ln -sfn "${SELF_DIR}/update_bedrock.sh" /usr/local/bin/bedrock-update
+        log INFO "Symlink dibuat: /usr/local/bin/bedrock-update -> ${SELF_DIR}/update_bedrock.sh"
+    fi
     log INFO "Panggil dari mana saja dengan: bedrock <perintah>"
+    log INFO "Setelah direktori server dipindah, jalankan ulang perintah ini dari lokasi baru."
 }
 
 # -----------------------------------------------------------------------------
@@ -983,6 +1158,8 @@ main() {
             echo "SERVICE_NAME   = $SERVICE_NAME"
             echo "SERVER_DIR     = $SERVER_DIR"
             echo "SCREEN_NAME    = $SCREEN_NAME"
+            echo "SERVICE_USER   = $SERVICE_USER (grup: $SERVICE_GROUP)"
+            echo "CURRENT_USER   = $CURRENT_USER"
             echo "LOG_FILE       = $LOG_FILE"
             echo "PLAYER_LOG     = $PLAYER_LOG"
             echo "BACKUP_DIR     = $BACKUP_DIR"

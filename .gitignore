@@ -23,3 +23,11 @@ player-logger.sh
 development_behavior_packs/
 development_resource_packs/
 development_skin_packs/
+
+# Digenerate saat runtime oleh bedrock-manager.sh / update_bedrock.sh
+.bedrock-manager.lock
+.bedrock-download.part
+.worlds-restore-staging/
+worlds.before-restore-*/
+.config-before-restore-*/
+player_activity.log

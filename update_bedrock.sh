@@ -1,19 +1,25 @@
 #!/bin/bash
 # =============================================================================
-# update_bedrock.sh — Skrip Pembaruan Otomatis Minecraft Bedrock Server
+# update_bedrock.sh - Skrip Pembaruan Otomatis Minecraft Bedrock Server
 # Repositori: https://github.com/hilmyah/bedrock-server
 # =============================================================================
 # Deskripsi:
 #   Mengunduh dan memasang versi terbaru binary Minecraft Bedrock Server secara
-#   otomatis: mendeteksi versi terkini, menghentikan server via systemd,
-#   membackup konfigurasi, mengekstrak binary baru, lalu menjalankan kembali
-#   server via systemd.
+#   otomatis: mendeteksi versi terkini, mengunduh arsip baru selagi server
+#   masih berjalan, menghentikan server via systemd, membackup konfigurasi,
+#   mengekstrak binary baru, lalu menjalankan kembali server via systemd.
 #
 # Prasyarat:
-#   curl, wget, unzip, screen, systemctl
+#   curl, wget, unzip, screen, systemctl, flock
+#
+# Hak akses:
+#   Jalankan sebagai user pemilik service (tanpa sudo) atau sebagai root.
+#   Bila bukan root, hanya 'systemctl stop/start' yang diteruskan lewat sudo.
+#   Bila root sementara service milik user biasa, kepemilikan file hasil
+#   update dikembalikan ke user tersebut.
 #
 # Penggunaan:
-#   sudo bash update_bedrock.sh [--force] [--no-restart] [--backup-worlds]
+#   bash update_bedrock.sh [--force] [--no-restart] [--backup-worlds]
 #
 # Opsi:
 #   --force          Paksa update meskipun versi sudah sama
@@ -26,15 +32,21 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # KONFIGURASI
 # -----------------------------------------------------------------------------
-# SERVER_DIR, SCREEN_NAME, SERVICE_NAME, BACKUP_DIR, LOCK_FILE TIDAK di-hardcode
-# di sini -- diresolusi oleh resolve_config() dengan urutan prioritas yang
-# PERSIS SAMA dengan bedrock-manager.sh: env var BEDROCK_* > CONF_FILE >
-# introspeksi systemctl > default bawaan. Ini wajib disamakan; skrip ini bisa
-# dipanggil baik lewat 'bedrock update' maupun langsung ('bedrock-update' /
-# 'sudo bash update_bedrock.sh'), dan pada instalasi dengan --dir=PATH custom,
-# path hardcode di sini akan salah sasaran secara diam-diam.
-CONF_FILE="/etc/bedrock-manager/manager.conf"
-LOG_FILE="/var/log/bedrock-update.log"
+# SERVER_DIR, SCREEN_NAME, SERVICE_NAME, SERVICE_USER, BACKUP_DIR, LOCK_FILE
+# TIDAK di-hardcode di sini -- diresolusi oleh resolve_config() dengan urutan
+# prioritas yang PERSIS SAMA dengan bedrock-manager.sh: env var BEDROCK_* >
+# CONF_FILE > introspeksi systemctl > direktori skrip ini berada > default
+# bawaan. Ini wajib disamakan; skrip ini bisa dipanggil baik lewat
+# 'bedrock update' maupun langsung ('bedrock-update' / 'bash update_bedrock.sh'),
+# dan pada instalasi di luar /opt, path hardcode di sini akan salah sasaran
+# secara diam-diam.
+CONF_FILE="${BEDROCK_CONF_FILE:-/etc/bedrock-manager/manager.conf}"
+SELF_PATH=$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "$0")
+SELF_DIR=$(dirname "$SELF_PATH")
+CURRENT_USER=$(id -un 2>/dev/null || echo "unknown")
+# Log update. Bila /var/log tidak dapat ditulisi (dijalankan tanpa root),
+# dialihkan ke SERVER_DIR setelah resolve_config (lihat resolve_update_log).
+UPDATE_LOG="${BEDROCK_UPDATE_LOG:-/var/log/bedrock-update.log}"
 
 # -----------------------------------------------------------------------------
 # WARNA OUTPUT
@@ -87,11 +99,16 @@ log() {
         STEP)  echo -e "\n${BOLD}${BLUE}==> $message${RESET}" >&2 ;;
     esac
 
-    echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
+    { echo "[$timestamp] [$level] $message" >> "$UPDATE_LOG"; } 2>/dev/null || true
+}
+
+unit_prop() {
+    systemctl show -p "$1" --value "${SERVICE_NAME}.service" 2>/dev/null || true
 }
 
 resolve_config() {
-    SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""; BACKUP_DIR=""; LOCK_FILE=""
+    SERVER_DIR=""; SCREEN_NAME=""; SERVICE_NAME=""; SERVICE_USER=""
+    BACKUP_DIR=""; LOCK_FILE=""
 
     if [ -f "$CONF_FILE" ]; then
         # shellcheck source=/dev/null
@@ -101,25 +118,83 @@ resolve_config() {
     [ -z "$SERVICE_NAME" ] && SERVICE_NAME="bedrock"
     [ -n "${BEDROCK_SERVICE_NAME:-}" ] && SERVICE_NAME="$BEDROCK_SERVICE_NAME"
 
+    local execstart
+    execstart=$(unit_prop ExecStart)
+
     if [ -z "$SERVER_DIR" ]; then
-        SERVER_DIR=$(systemctl show -p WorkingDirectory --value "${SERVICE_NAME}.service" 2>/dev/null || true)
+        SERVER_DIR=$(unit_prop WorkingDirectory)
+        SERVER_DIR="${SERVER_DIR#[-!]}"
+    fi
+    if [ -z "$SERVER_DIR" ] && [ -e "${SELF_DIR}/bedrock_server" ]; then
+        SERVER_DIR="$SELF_DIR"
     fi
     [ -z "$SERVER_DIR" ] && SERVER_DIR="/opt/bedrock-server"
     [ -n "${BEDROCK_SERVER_DIR:-}" ] && SERVER_DIR="$BEDROCK_SERVER_DIR"
 
     if [ -z "$SCREEN_NAME" ]; then
-        local execstart
-        execstart=$(systemctl show -p ExecStart --value "${SERVICE_NAME}.service" 2>/dev/null || true)
         SCREEN_NAME=$(echo "$execstart" | grep -oE '\-DmS[[:space:]]+[^[:space:]]+' | awk '{print $2}' || true)
     fi
     [ -z "$SCREEN_NAME" ] && SCREEN_NAME="mc-server"
     [ -n "${BEDROCK_SCREEN_NAME:-}" ] && SCREEN_NAME="$BEDROCK_SCREEN_NAME"
 
+    [ -z "$SERVICE_USER" ] && SERVICE_USER=$(unit_prop User)
+    [ -z "$SERVICE_USER" ] && SERVICE_USER="root"
+    [ -n "${BEDROCK_SERVICE_USER:-}" ] && SERVICE_USER="$BEDROCK_SERVICE_USER"
+    SERVICE_GROUP=$(id -gn "$SERVICE_USER" 2>/dev/null || echo "$SERVICE_USER")
+
     [ -z "$BACKUP_DIR" ]            && BACKUP_DIR="${SERVER_DIR}-backup"
     [ -n "${BEDROCK_BACKUP_DIR:-}" ] && BACKUP_DIR="$BEDROCK_BACKUP_DIR"
 
-    [ -z "$LOCK_FILE" ]            && LOCK_FILE="/var/lock/bedrock-manager-${SERVICE_NAME}.lock"
+    [ -z "$LOCK_FILE" ]            && LOCK_FILE="${SERVER_DIR}/.bedrock-manager.lock"
     [ -n "${BEDROCK_LOCK_FILE:-}" ] && LOCK_FILE="$BEDROCK_LOCK_FILE"
+    return 0
+}
+
+resolve_update_log() {
+    if { : >> "$UPDATE_LOG"; } 2>/dev/null; then
+        return 0
+    fi
+    UPDATE_LOG="${SERVER_DIR}/bedrock-update.log"
+    return 0
+}
+
+# systemctl stop/start butuh hak root. Bila dipanggil user biasa, diteruskan
+# lewat sudo (meminta password sesuai kebijakan sudoers).
+svc_ctl() {
+    if [ "$EUID" -eq 0 ]; then
+        systemctl "$@"
+        return
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        log ERROR "'systemctl $*' butuh hak root dan sudo tidak tersedia."
+        return 1
+    fi
+    sudo systemctl "$@"
+}
+
+# Mengembalikan kepemilikan ke user service. Hanya berefek bila skrip jalan
+# sebagai root sementara service milik user lain; selain itu no-op.
+fix_owner() {
+    [ "$EUID" -eq 0 ] || return 0
+    [ "$SERVICE_USER" = "root" ] && return 0
+    local p
+    for p in "$@"; do
+        if [ -e "$p" ]; then
+            chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$p"
+        fi
+    done
+    return 0
+}
+
+fix_owner_top() {
+    [ "$EUID" -eq 0 ] || return 0
+    [ "$SERVICE_USER" = "root" ] && return 0
+    local p
+    for p in "$@"; do
+        if [ -e "$p" ]; then
+            chown "${SERVICE_USER}:${SERVICE_GROUP}" "$p"
+        fi
+    done
     return 0
 }
 
@@ -136,7 +211,7 @@ resolve_config() {
 # sudah terbuka dan menunjuk ke LOCK_FILE yang sama, anggap lock sudah
 # dipegang pemanggil, jangan disentuh ulang.
 #
-# Kasus panggilan langsung ('bedrock-update' / 'sudo bash update_bedrock.sh'):
+# Kasus panggilan langsung ('bedrock-update' / 'bash update_bedrock.sh'):
 # fd 200 belum terbuka sama sekali -- lakukan flock -n seperti biasa.
 acquire_lock() {
     if [ -e "/proc/$$/fd/200" ]; then
@@ -150,10 +225,12 @@ acquire_lock() {
     fi
 
     mkdir -p "$(dirname "$LOCK_FILE")" 2>/dev/null || true
-    exec 200>"$LOCK_FILE" || {
+    if ! { exec 200>>"$LOCK_FILE"; } 2>/dev/null; then
         log ERROR "Tidak dapat membuka file lock: $LOCK_FILE"
+        log ERROR "Jalankan sebagai '$SERVICE_USER' atau lewat sudo."
         exit 1
-    }
+    fi
+    fix_owner_top "$LOCK_FILE"
     if ! flock -n 200; then
         log ERROR "Operasi lain (backup/restore/update/restart) sedang berjalan."
         log ERROR "Tunggu sampai selesai, lalu coba lagi."
@@ -164,7 +241,7 @@ acquire_lock() {
 
 check_dependencies() {
     local missing=()
-    for cmd in curl wget unzip screen systemctl; do
+    for cmd in curl wget unzip screen systemctl flock; do
         if ! command -v "$cmd" &>/dev/null; then
             missing+=("$cmd")
         fi
@@ -216,7 +293,7 @@ fetch_latest_url() {
 
     if [ -z "$url" ]; then
         log ERROR "Gagal mendapatkan URL unduhan dinamis dari semua metode."
-        log ERROR "Solusi Darurat: Unduh file zip secara manual ke dalam direktori server, lalu jalankan ulang perintah ./update_bedrock.sh --force"
+        log ERROR "Solusi darurat: unduh bedrock-server-<versi>.zip secara manual ke direktori server, lalu jalankan ulang dengan --force."
         exit 1
     fi
 
@@ -228,16 +305,18 @@ fetch_latest_url() {
 # -----------------------------------------------------------------------------
 echo -e "${BOLD}"
 echo "============================================================"
-echo "   Minecraft Bedrock Server — Skrip Pembaruan Otomatis"
+echo "   Minecraft Bedrock Server - Skrip Pembaruan Otomatis"
 echo "============================================================"
 echo -e "${RESET}"
 
-if [ "$EUID" -ne 0 ]; then
-    log ERROR "Skrip ini harus dijalankan sebagai root atau dengan sudo."
+resolve_config
+
+if [ "$EUID" -ne 0 ] && [ "$CURRENT_USER" != "$SERVICE_USER" ]; then
+    log ERROR "Service '$SERVICE_NAME' berjalan sebagai user '$SERVICE_USER', sedangkan Anda '$CURRENT_USER'."
+    log ERROR "Jalankan sebagai '$SERVICE_USER' atau lewat sudo."
     exit 1
 fi
 
-resolve_config
 check_dependencies
 
 if [ ! -d "$SERVER_DIR" ]; then
@@ -245,6 +324,7 @@ if [ ! -d "$SERVER_DIR" ]; then
     exit 1
 fi
 
+resolve_update_log
 acquire_lock
 
 cd "$SERVER_DIR"
@@ -253,8 +333,21 @@ cd "$SERVER_DIR"
 # LANGKAH 1: Deteksi Versi
 # -----------------------------------------------------------------------------
 log STEP "Memeriksa Versi"
+log INFO "Direktori server: ${SERVER_DIR} (user service: ${SERVICE_USER})"
 
-LATEST_URL=$(fetch_latest_url)
+# Jalur darurat: bila seluruh metode deteksi URL gagal, --force memakai arsip
+# 'bedrock-server-<versi>.zip' terbaru yang sudah diletakkan manual di
+# SERVER_DIR, tanpa mengunduh.
+LOCAL_ZIP=""
+if ! LATEST_URL=$(fetch_latest_url); then
+    LOCAL_ZIP=$( (ls "${SERVER_DIR}"/bedrock-server-*.zip 2>/dev/null | sort -V | tail -n 1) || true )
+    if [ "$FORCE_UPDATE" = true ] && [ -n "$LOCAL_ZIP" ]; then
+        log WARN "Memakai arsip lokal karena --force aktif: $LOCAL_ZIP"
+        LATEST_URL="$LOCAL_ZIP"
+    else
+        exit 1
+    fi
+fi
 FILE_NAME=$(basename "$LATEST_URL")
 LATEST_VERSION=$(echo "$FILE_NAME" | sed 's/bedrock-server-//' | sed 's/\.zip//')
 CURRENT_VERSION=$(get_current_version)
@@ -273,20 +366,62 @@ if [ "$FORCE_UPDATE" = true ] && [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; the
 fi
 
 # -----------------------------------------------------------------------------
-# LANGKAH 2: Hentikan Server
+# LANGKAH 2: Unduh Binary Baru (server MASIH berjalan)
+# -----------------------------------------------------------------------------
+# Unduhan dilakukan SEBELUM server dihentikan dan ke nama file sementara.
+# Bila unduhan gagal, server tidak pernah berhenti dan arsip versi lama (yang
+# menjadi penanda versi terpasang) tidak tersentuh. Nama sementara sengaja
+# tidak cocok dengan pola 'bedrock-server-*.zip' agar tidak terbaca sebagai
+# versi terpasang oleh get_current_version.
+log STEP "Mengunduh Binary Terbaru"
+
+DOWNLOAD_TMP="${SERVER_DIR}/.bedrock-download.part"
+rm -f "$DOWNLOAD_TMP"
+
+if [ -n "$LOCAL_ZIP" ]; then
+    log INFO "Melewati unduhan, menyalin arsip lokal..."
+    cp "$LOCAL_ZIP" "$DOWNLOAD_TMP"
+elif ! { log INFO "Mengunduh $FILE_NAME..."; wget \
+    --show-progress \
+    --retry-connrefused \
+    --waitretry=5 \
+    --tries=3 \
+    -O "$DOWNLOAD_TMP" \
+    "$LATEST_URL"; }; then
+    log ERROR "Gagal mengunduh binary. Periksa koneksi internet."
+    log ERROR "Update DIBATALKAN. Server tidak dihentikan dan tidak ada file yang diubah."
+    rm -f "$DOWNLOAD_TMP"
+    exit 1
+fi
+
+if [ ! -s "$DOWNLOAD_TMP" ] || ! unzip -tq "$DOWNLOAD_TMP" >/dev/null 2>&1; then
+    log ERROR "File yang diunduh kosong atau bukan arsip zip yang valid."
+    log ERROR "Update DIBATALKAN. Server tidak dihentikan dan tidak ada file yang diubah."
+    rm -f "$DOWNLOAD_TMP"
+    exit 1
+fi
+
+log INFO "Arsip siap dan lolos uji integritas: $FILE_NAME ($(du -h "$DOWNLOAD_TMP" | cut -f1))"
+
+# -----------------------------------------------------------------------------
+# LANGKAH 3: Hentikan Server
 # -----------------------------------------------------------------------------
 log STEP "Menghentikan Server"
 
 if is_server_running; then
     log INFO "Memerintahkan systemd untuk mematikan server secara sinkron..."
-    systemctl stop "$SERVICE_NAME"
+    if ! svc_ctl stop "$SERVICE_NAME"; then
+        log ERROR "Gagal menghentikan server. Update DIBATALKAN, tidak ada file yang diubah."
+        rm -f "$DOWNLOAD_TMP"
+        exit 1
+    fi
     log INFO "Server berhasil dihentikan."
 else
     log INFO "Server tidak sedang berjalan. Melanjutkan pembaruan."
 fi
 
 # -----------------------------------------------------------------------------
-# LANGKAH 3: Backup
+# LANGKAH 4: Backup
 # -----------------------------------------------------------------------------
 log STEP "Membuat Backup Konfigurasi"
 
@@ -309,48 +444,24 @@ if [ "$BACKUP_WORLDS" = true ]; then
     fi
 fi
 
+fix_owner_top "$BACKUP_DIR"
+fix_owner "$BACKUP_DIR/$TIMESTAMP"
 log INFO "Backup tersimpan di: $BACKUP_DIR/$TIMESTAMP"
-
-# -----------------------------------------------------------------------------
-# LANGKAH 4: Unduh Binary Baru
-# -----------------------------------------------------------------------------
-log STEP "Mengunduh Binary Terbaru"
-
-log INFO "Menghapus installer lama..."
-rm -f bedrock-server-*.zip
-
-log INFO "Mengunduh $FILE_NAME..."
-if ! wget \
-    --show-progress \
-    --retry-connrefused \
-    --waitretry=5 \
-    --tries=3 \
-    -O "$FILE_NAME" \
-    "$LATEST_URL"; then
-    log ERROR "Gagal mengunduh binary. Periksa koneksi internet."
-    log INFO "Mengembalikan server ke kondisi sebelumnya..."
-    for f in "${CONFIG_FILES[@]}"; do
-        [ -f "$BACKUP_DIR/$TIMESTAMP/$f" ] && cp "$BACKUP_DIR/$TIMESTAMP/$f" "$SERVER_DIR/$f"
-    done
-    exit 1
-fi
-
-if [ ! -s "$FILE_NAME" ]; then
-    log ERROR "File yang diunduh kosong atau rusak."
-    rm -f "$FILE_NAME"
-    exit 1
-fi
-
-log INFO "Unduhan berhasil: $FILE_NAME ($(du -h "$FILE_NAME" | cut -f1))"
 
 # -----------------------------------------------------------------------------
 # LANGKAH 5: Ekstrak dan Pasang
 # -----------------------------------------------------------------------------
 log STEP "Mengekstrak dan Memasang Pembaruan"
 
+# Arsip versi lama baru dihapus di titik ini, setelah arsip baru terbukti utuh.
+rm -f bedrock-server-*.zip
+mv "$DOWNLOAD_TMP" "$FILE_NAME"
+
 log INFO "Mengekstrak arsip (mode overwrite)..."
 if ! unzip -o -q "$FILE_NAME"; then
-    log ERROR "Gagal mengekstrak arsip. File mungkin rusak."
+    log ERROR "Gagal mengekstrak arsip. Server TIDAK dijalankan kembali."
+    log ERROR "Konfigurasi tersimpan di: $BACKUP_DIR/$TIMESTAMP"
+    fix_owner "$SERVER_DIR"
     exit 1
 fi
 
@@ -366,6 +477,10 @@ done
 chmod +x bedrock_server
 log INFO "Izin eksekusi berhasil disetel."
 
+# Bila dijalankan sebagai root untuk service milik user biasa, file hasil
+# ekstraksi menjadi milik root dan server tidak akan bisa menulisinya.
+fix_owner "$SERVER_DIR"
+
 # -----------------------------------------------------------------------------
 # LANGKAH 6: Jalankan Ulang Server
 # -----------------------------------------------------------------------------
@@ -375,12 +490,12 @@ if [ "$NO_RESTART" = true ]; then
     log INFO "  systemctl start $SERVICE_NAME"
 else
     log STEP "Menjalankan Ulang Server"
-    systemctl start "$SERVICE_NAME"
+    svc_ctl start "$SERVICE_NAME" || true
     sleep 3
 
     if is_server_running; then
         log INFO "Server berhasil dihidupkan melalui systemd."
-        log INFO "Lihat konsol dengan: screen -r $SCREEN_NAME"
+        log INFO "Lihat konsol dengan: screen -r $SCREEN_NAME (sebagai user '$SERVICE_USER')"
     else
         log ERROR "Server gagal dijalankan. Periksa log dengan:"
         log ERROR "  systemctl status $SERVICE_NAME"
@@ -398,7 +513,7 @@ echo -e "============================================================${RESET}"
 echo -e "  Versi sebelumnya : ${RED}${CURRENT_VERSION}${RESET}"
 echo -e "  Versi terpasang  : ${GREEN}${LATEST_VERSION}${RESET}"
 echo -e "  Backup tersimpan : ${BACKUP_DIR}/${TIMESTAMP}"
-echo -e "  Log tersedia di  : ${LOG_FILE}"
+echo -e "  Log tersedia di  : ${UPDATE_LOG}"
 if [ "$NO_RESTART" = false ]; then
     echo -e "  Konsol server    : screen -r ${SCREEN_NAME}"
 fi
